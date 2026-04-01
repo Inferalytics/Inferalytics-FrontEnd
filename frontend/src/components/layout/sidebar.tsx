@@ -13,6 +13,8 @@ import {
     LogOut,
     LayoutDashboard,
     TrendingUp,
+    Upload,
+    SlidersHorizontal,
     User
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -20,6 +22,8 @@ import { OrganizationSwitcher, UserButton, useUser } from '@clerk/nextjs';
 
 const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
+    { icon: Upload, label: 'Data Upload', href: '/data-upload' },
+    { icon: SlidersHorizontal, label: 'Data Setup', href: '/data-setup' },
     { icon: BarChart3, label: 'Optimization', href: '/optimization' },
     { icon: TrendingUp, label: 'Forecasting', href: '/analysis' },
     { icon: History, label: 'History', href: '/history' },

@@ -1,0 +1,174 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap');
+
+:root {
+  --background: #FAF8F5; /* Warm Canvas */
+  --foreground: #2C2B29; /* Charcoal Dark */
+  --card: #FFFFFF;
+  --card-foreground: #2C2B29;
+  --popover: #FFFFFF;
+  --popover-foreground: #2C2B29;
+  --primary: #FF5A1F; /* Brilliant Orange */
+  --primary-foreground: #FFFFFF;
+  --secondary: #EFECE8; /* Warm light gray */
+  --secondary-foreground: #2C2B29;
+  --muted: #FAF2EB; /* Soft peach/cream */
+  --muted-foreground: #7E7770;
+  --accent: #FF8F6B; /* Peach */
+  --accent-foreground: #2C2B29;
+  --destructive: #E07A5F;
+  --input: #EFECE8;
+  --ring: #FFD4C5; /* Peach Ring */
+  --radius: 0.75rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  
+  /* Custom Color Tokens from UI-Color.png - Remapped to Orangish Scheme */
+  --color-warm-bg: #FAF8F5;
+  --color-warm-panel: #FFFDFB;
+  --color-warm-border: #EFECE8;
+  --color-warm-border-strong: #DFDCD8;
+  --color-warm-text: #2C2B29;
+  --color-warm-muted: #7E7770;
+  
+  --color-peach-light: #FFF2EE;
+  --color-peach: #FF8F6B;
+  --color-lavender: #FFF2EE; /* Soft peach tint for bubbles */
+  --color-brand-indigo: #FF5A1F; /* Remapped brand primary to Orange */
+  
+  --color-sage: #8EA885;
+  --color-sage-light: #EFF4ED;
+  --color-sage-border: #C4D3BE;
+  
+  --color-amber-warm: #EA580C; /* Deep orange */
+  --color-amber-warm-light: #FFF2EE;
+  --color-amber-warm-border: #FFD4C5;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-warm-border;
+  }
+
+  body {
+    @apply bg-warm-bg text-warm-text antialiased;
+    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    letter-spacing: -0.02em;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Custom Utilities and Animations */
+@keyframes marching-ants {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(110, 105, 190, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(110, 105, 190, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(110, 105, 190, 0);
+  }
+}
+
+@keyframes float-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes typing {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.animate-marching-ants {
+  stroke-dasharray: 6, 4;
+  animation: marching-ants 0.8s linear infinite;
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-float-up {
+  animation: float-up 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-typing-dot {
+  animation: typing 1.2s ease-in-out infinite;
+}
+
+/* Hide scrollbar utility for clean canvas styling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom premium scrollbar for panels */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #EFECE8;
+  border-radius: 99px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #DFDCD8;
+}
+

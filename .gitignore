@@ -11,6 +11,7 @@
 !.yarn/versions
 helping-material/
 *.md
+!README.md
 # testing
 /coverage
 

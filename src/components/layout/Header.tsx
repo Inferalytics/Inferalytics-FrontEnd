@@ -33,10 +33,10 @@ export default function Header() {
     { path: 'talk', label: '01 Talk' },
     { path: 'setup', label: '02 Setup' },
     { path: 'build', label: '03 Build' },
-    // { path: 'batch', label: '04 Batch' },
-    // { path: 'optimise', label: '05 Optimise' },
-    // { path: 'results', label: '06 Results' },
-    // { path: 'compare', label: '07 Compare' }
+    { path: 'batch', label: '04 Batch' },
+    { path: 'optimise', label: '05 Optimise' },
+    { path: 'results', label: '06 Results' },
+    { path: 'compare', label: '07 Compare' }
   ];
 
   const modelOptions: { value: ModelType; label: string }[] = [

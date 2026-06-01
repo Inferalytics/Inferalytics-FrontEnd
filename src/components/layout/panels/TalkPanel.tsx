@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, ArrowRight, Check, Paperclip, Send } from 'lucide-react';
 import { useStore } from '../../../store/useStore';
+import { useNavigate } from 'react-router-dom';
 
 interface TalkPanelProps {
   triggerToast: (msg: string) => void;
@@ -8,6 +9,7 @@ interface TalkPanelProps {
 
 export default function TalkPanel({ triggerToast }: TalkPanelProps) {
   const { setScreen } = useStore();
+  const navigate = useNavigate();
 
   const [talkAnimationPhase, setTalkAnimationPhase] = useState<'center' | 'sliding' | 'unfolding' | 'ready'>('center');
   const [talkMessages, setTalkMessages] = useState<{ sender: 'ai' | 'user'; text: string }[]>([]);
@@ -139,7 +141,7 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
             : 'w-0 max-w-0 opacity-0 max-h-0 scale-[0.97] -translate-x-8 border-transparent p-0 gap-0 overflow-hidden pointer-events-none invisible'
         }`}
       >
-        <div className="flex flex-col gap-6 overflow-y-auto max-h-[500px] pr-1 custom-scrollbar">
+        <div className="flex flex-col gap-6 overflow-y-auto max-h-[620px] pr-1 custom-scrollbar">
           {/* Initial AI bubble */}
           <div className="flex gap-3">
             <div className="h-7 w-7 rounded-full bg-lavender flex items-center justify-center shrink-0 border border-warm-border">
@@ -209,7 +211,7 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
                     </span>
                   </div>
                   <button
-                    onClick={() => setScreen(2)}
+                    onClick={() => navigate('/dashboard/setup/general')}
                     className="py-1.5 px-4 bg-sage hover:bg-sage/90 text-white rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center gap-1 cursor-pointer"
                   >
                     Upload data

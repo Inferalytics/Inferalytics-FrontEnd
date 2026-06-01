@@ -22,16 +22,21 @@ export default function Header() {
   const [isModelOpen, setIsModelOpen] = useState(false);
 
   const activeBatch = batches.find(b => b.id === activeBatchId) || batches[0];
+  
+  let activeStep = 0;
+  if (tab === 'setup') activeStep = 1;
+  else if (tab === 'build' || tab === 'batch') activeStep = 2;
+  else if (tab === 'optimise' || tab === 'results' || tab === 'compare') activeStep = 3;
 
   // Screen segmented navbar items mapped directly to browser slugs
   const screensList = [
     { path: 'talk', label: '01 Talk' },
     { path: 'setup', label: '02 Setup' },
     { path: 'build', label: '03 Build' },
-    { path: 'batch', label: '04 Batch' },
-    { path: 'optimise', label: '05 Optimise' },
-    { path: 'results', label: '06 Results' },
-    { path: 'compare', label: '07 Compare' }
+    // { path: 'batch', label: '04 Batch' },
+    // { path: 'optimise', label: '05 Optimise' },
+    // { path: 'results', label: '06 Results' },
+    // { path: 'compare', label: '07 Compare' }
   ];
 
   const modelOptions: { value: ModelType; label: string }[] = [
@@ -42,21 +47,20 @@ export default function Header() {
   ];
 
   return (
-    <header className="h-12 w-full bg-warm-panel border-b border-warm-border px-4 flex items-center justify-between z-40 relative select-none shrink-0 font-sans">
-      {/* Left: Wordmark */}
-      <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/dashboard/talk')}>
-        <div className="h-6 w-6 rounded-lg bg-primary flex items-center justify-center shadow-sm">
-          <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
+    <header className="h-12 w-full bg-transparent px-4 flex items-center justify-between z-40 relative select-none shrink-0 font-sans">
+      {/* Left: Wordmark & Batch Switcher & Model Selector */}
+      <div className="flex items-center gap-6">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/dashboard/talk')}>
+          <div className="h-6 w-6 rounded-lg bg-primary flex items-center justify-center shadow-sm">
+            <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
+          </div>
+          <span className="text-[15px] font-bold tracking-tight text-warm-text">
+            Inferalytics
+          </span>
         </div>
-        <span className="text-[15px] font-bold tracking-tight text-warm-text bg-gradient-to-r from-warm-text to-brand-indigo bg-clip-text text-transparent">
-          Inferalytics
-        </span>
-      </div>
 
-      {/* Centre: Batch Switcher & Model Selector (hidden on screen 1 / 'talk') */}
-      <div className="flex items-center gap-3">
         {tab !== 'talk' && (
-          <>
+          <div className="flex items-center gap-3">
             {/* Batch Switcher */}
             <div className="relative">
               <button 
@@ -152,28 +156,100 @@ export default function Header() {
                 </div>
               )}
             </div>
-          </>
+          </div>
         )}
       </div>
+
+      {/* Centre: Workflow Stepper (shown when activeStep > 0) */}
+      {activeStep > 0 && (
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-white/70 backdrop-blur-md px-3.5 py-1 border border-warm-border rounded-full shadow-sm">
+          {/* Step 1: Define */}
+          <button
+            onClick={() => navigate('/dashboard/setup/general')}
+            className="flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer focus:outline-none"
+          >
+            <span className={`h-5 w-5 rounded-full text-[10px] font-bold flex items-center justify-center shadow-sm transition-colors ${
+              activeStep === 1 
+                ? 'bg-brand-indigo text-white shadow-sm' 
+                : activeStep > 1 
+                  ? 'bg-sage text-white' 
+                  : 'bg-secondary text-warm-muted'
+            }`}>
+              {activeStep > 1 ? '✓' : '1'}
+            </span>
+            <span className={`text-[11.5px] font-bold transition-colors ${
+              activeStep === 1 ? 'text-brand-indigo font-semibold' : activeStep > 1 ? 'text-sage' : 'text-warm-muted font-medium'
+            }`}>
+              Define
+            </span>
+          </button>
+
+          <span className="h-px w-6 bg-warm-border" />
+
+          {/* Step 2: Construct */}
+          <button
+            onClick={() => navigate('/dashboard/build/dimensions')}
+            className="flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer focus:outline-none"
+          >
+            <span className={`h-5 w-5 rounded-full text-[10px] font-bold flex items-center justify-center shadow-sm transition-colors ${
+              activeStep === 2 
+                ? 'bg-brand-indigo text-white shadow-sm' 
+                : activeStep > 2 
+                  ? 'bg-sage text-white' 
+                  : 'bg-secondary text-warm-muted font-medium'
+            }`}>
+              {activeStep > 2 ? '✓' : '2'}
+            </span>
+            <span className={`text-[11.5px] font-bold transition-colors ${
+              activeStep === 2 ? 'text-brand-indigo font-semibold' : activeStep > 2 ? 'text-sage font-medium' : 'text-warm-muted font-medium'
+            }`}>
+              Construct
+            </span>
+          </button>
+
+          <span className="h-px w-6 bg-warm-border" />
+
+          {/* Step 3: Optimise */}
+          <button
+            onClick={() => navigate('/dashboard/optimise')}
+            className="flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer focus:outline-none"
+          >
+            <span className={`h-5 w-5 rounded-full text-[10px] font-bold flex items-center justify-center shadow-sm transition-colors ${
+              activeStep === 3 
+                ? 'bg-brand-indigo text-white shadow-sm' 
+                : 'bg-secondary text-warm-muted font-medium'
+            }`}>
+              3
+            </span>
+            <span className={`text-[11.5px] font-bold transition-colors ${
+              activeStep === 3 ? 'text-brand-indigo font-semibold' : 'text-warm-muted font-medium'
+            }`}>
+              Optimise
+            </span>
+          </button>
+        </div>
+      )}
 
       {/* Right: Screen Navigation & Avatar */}
       <div className="flex items-center gap-3">
         {/* Segmented Control */}
-        <div className="flex items-center gap-0.5 bg-secondary/80 p-0.5 rounded-full border border-warm-border/40">
-          {screensList.map(s => (
-            <button
-              key={s.path}
-              onClick={() => navigate(`/dashboard/${s.path}`)}
-              className={`px-3 py-1 rounded-full text-[11px] font-medium transition-all duration-200 cursor-pointer ${
-                tab === s.path
-                  ? 'bg-white text-brand-indigo shadow-sm font-semibold'
-                  : 'text-warm-muted hover:text-warm-text hover:bg-white/40'
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+        {tab !== 'talk' && (
+          <div className="flex items-center gap-0.5 bg-secondary/80 p-0.5 rounded-full border border-warm-border/40">
+            {screensList.map(s => (
+              <button
+                key={s.path}
+                onClick={() => navigate(`/dashboard/${s.path}`)}
+                className={`px-3 py-1 rounded-full text-[11px] font-medium transition-all duration-200 cursor-pointer ${
+                  tab === s.path
+                    ? 'bg-white text-brand-indigo shadow-sm font-semibold'
+                    : 'text-warm-muted hover:text-warm-text hover:bg-white/40'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* User Button / Avatar */}
         <div className="h-7 w-7 rounded-full flex items-center justify-center relative shadow-sm border border-warm-border shrink-0">

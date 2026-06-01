@@ -22,7 +22,7 @@ export default function LeftPanel() {
   };
 
   return (
-    <aside className="w-[240px] h-[calc(100vh-48px)] bg-warm-panel border-r border-warm-border flex flex-col justify-between p-4 select-none z-30 shrink-0 font-sans">
+    <aside className="w-[240px] h-[calc(100vh-48px)] bg-white/40 backdrop-blur-md border-r border-warm-border/50 flex flex-col justify-between p-4 select-none isolate shrink-0 font-sans">
       <div className="flex flex-col gap-6 overflow-y-auto no-scrollbar">
         {/* Batches Navigation */}
         <div className="flex flex-col gap-2">

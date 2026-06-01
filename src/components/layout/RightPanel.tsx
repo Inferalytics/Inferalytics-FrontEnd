@@ -58,9 +58,9 @@ export default function RightPanel() {
   const isThinking = conversation.some((m) => m.isTyping) || isOptimizing;
 
   return (
-    <aside className="w-[360px] h-[calc(100vh-48px)] bg-warm-panel border-l border-warm-border flex flex-col justify-between select-none z-30 shrink-0 font-sans">
+    <aside className="w-[360px] h-[calc(100vh-48px)] bg-white/40 backdrop-blur-md border-l border-warm-border/50 flex flex-col justify-between isolate shrink-0 font-sans">
       {/* 48px Header */}
-      <div className="h-12 border-b border-warm-border px-4 flex items-center justify-between bg-white/70 backdrop-blur-md shrink-0">
+      <div className="h-12 border-b border-warm-border/40 px-4 flex items-center justify-between bg-white/50 backdrop-blur-sm shrink-0">
         <div className="flex items-center gap-1.5">
           <Sparkles className={`h-4 w-4 text-brand-indigo ${isThinking ? 'animate-spin' : ''}`} />
           <span className="text-[12.5px] font-bold text-warm-text tracking-tight uppercase">
@@ -147,8 +147,8 @@ export default function RightPanel() {
       </div>
 
       {/* Composer Input */}
-      <div className="p-3 border-t border-warm-border bg-white/50 backdrop-blur-md shrink-0">
-        <div className="relative border border-warm-border bg-white rounded-xl shadow-sm focus-within:ring-2 focus-within:ring-ring focus-within:border-brand-indigo transition-all overflow-hidden flex flex-col justify-between min-h-[72px]">
+      <div className="p-3 border-t border-warm-border/40 bg-white/30 shrink-0">
+        <div className="relative border border-warm-border bg-white/60 rounded-xl shadow-sm focus-within:ring-2 focus-within:ring-ring focus-within:border-brand-indigo transition-all overflow-hidden flex flex-col justify-between min-h-[72px]">
           <textarea
             value={inputVal}
             onChange={(e) => setInputVal(e.target.value)}
@@ -161,7 +161,7 @@ export default function RightPanel() {
             }
             className="w-full px-3 py-2 text-[12.5px] text-warm-text bg-transparent placeholder-warm-muted border-none outline-none focus:ring-0 resize-none max-h-16 disabled:opacity-50"
           />
-          <div className="px-3 pb-1.5 flex justify-between items-center bg-white">
+          <div className="px-3 pb-1.5 flex justify-between items-center bg-transparent">
             <span className="text-[9px] text-warm-muted font-mono font-medium">
               Press ⏎ to send · ⇧⏎ for new line
             </span>

@@ -44,7 +44,7 @@ export default function Shell() {
   const showPanels = tab !== 'talk';
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-warm-bg select-none">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-warm-gradient select-none">
       {/* 48px Header */}
       <Header />
       

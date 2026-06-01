@@ -213,3 +213,39 @@
     radial-gradient(circle at 50% 50%, rgba(255, 242, 238, 0.55) 0%, #FAF8F5 100%);
 }
 
+/* Missing animate-fade-in */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Premium Card Shadow Utilities */
+.shadow-card {
+  box-shadow:
+    0 1px 3px rgba(44, 43, 41, 0.04),
+    0 4px 16px rgba(44, 43, 41, 0.06),
+    0 8px 32px rgba(44, 43, 41, 0.04);
+}
+
+.shadow-float {
+  box-shadow:
+    0 2px 8px rgba(44, 43, 41, 0.06),
+    0 12px 40px rgba(44, 43, 41, 0.08),
+    0 0 0 1px rgba(239, 236, 232, 0.6);
+}
+
+/* Scale micro-animation utility */
+.scale-102 {
+  transform: scale(1.02);
+}
+

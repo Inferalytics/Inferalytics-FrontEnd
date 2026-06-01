@@ -172,3 +172,44 @@
   background: #DFDCD8;
 }
 
+/* Premium Text Shimmer Animation */
+@keyframes text-shimmer {
+  0% {
+    background-position: 150% 0;
+  }
+  100% {
+    background-position: -150% 0;
+  }
+}
+.animate-text-shimmer {
+  background: linear-gradient(90deg, #2C2B29 25%, #FF5A1F 50%, #2C2B29 75%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: text-shimmer 2.2s infinite linear;
+}
+
+/* Premium Modern Fade and Slide Animation */
+@keyframes modern-fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-modern-fade {
+  animation: modern-fade-in 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Premium Lightly Warm Mesh Gradient Background */
+.bg-warm-gradient {
+  background: 
+    radial-gradient(circle at 5% 5%, rgba(255, 90, 31, 0.05) 0%, transparent 35%), 
+    radial-gradient(circle at 95% 95%, rgba(255, 143, 107, 0.08) 0%, transparent 45%), 
+    radial-gradient(circle at 50% 50%, rgba(255, 242, 238, 0.55) 0%, #FAF8F5 100%);
+}
+

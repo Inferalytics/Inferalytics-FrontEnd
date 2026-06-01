@@ -7,16 +7,7 @@ interface AuthLayoutProps {
 
 export default function AuthLayout({ children }: AuthLayoutProps) {
   return (
-    <div className="flex h-screen w-screen bg-warm-bg relative overflow-hidden select-none font-sans">
-      {/* Canvas Radial Grid Background */}
-      <div 
-        className="absolute inset-0 z-0 pointer-events-none" 
-        style={{
-          backgroundImage: 'radial-gradient(#E5DFD5 1.2px, transparent 1.2px)',
-          backgroundSize: '24px 24px',
-          opacity: 0.55
-        }}
-      />
+    <div className="flex h-screen w-screen bg-warm-gradient relative overflow-hidden select-none font-sans">
 
       <div className="flex w-full h-full relative z-10">
         

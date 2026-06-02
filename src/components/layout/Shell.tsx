@@ -20,7 +20,13 @@ const routeTabMap: Record<string, number> = {
 export default function Shell() {
   const { tab, subtab } = useParams<{ tab: string; subtab?: string }>();
   const navigate = useNavigate();
-  const { setScreen } = useStore();
+  const { 
+    setScreen, 
+    leftSidebarOpen, 
+    setLeftSidebarOpen, 
+    rightSidebarOpen, 
+    setRightSidebarOpen 
+  } = useStore();
 
   useEffect(() => {
     // Automatically synchronize browser route parameters with Zustand store
@@ -40,6 +46,12 @@ export default function Shell() {
     }
   }, [tab, subtab, navigate]);
 
+  // Close drawers when navigating between tabs
+  useEffect(() => {
+    setLeftSidebarOpen(false);
+    setRightSidebarOpen(false);
+  }, [tab, subtab, setLeftSidebarOpen, setRightSidebarOpen]);
+
   // Hide side panels on screen 01 (talk) to maintain full bleed conversation grid
   const showPanels = tab !== 'talk';
 
@@ -50,6 +62,22 @@ export default function Shell() {
       
       {/* Content Columns */}
       <div className="flex flex-1 w-full h-[calc(100vh-48px)] overflow-hidden relative">
+        {/* Backdrop for Left Sidebar */}
+        {showPanels && leftSidebarOpen && (
+          <div 
+            onClick={() => setLeftSidebarOpen(false)}
+            className="fixed inset-0 bg-[#2C2B29]/15 backdrop-blur-[1px] z-30 lg:hidden"
+          />
+        )}
+        
+        {/* Backdrop for Right Sidebar */}
+        {showPanels && rightSidebarOpen && (
+          <div 
+            onClick={() => setRightSidebarOpen(false)}
+            className="fixed inset-0 bg-[#2C2B29]/15 backdrop-blur-[1px] z-30 lg:hidden"
+          />
+        )}
+
         {showPanels && <LeftPanel />}
         <CenterPanel />
         {showPanels && <RightPanel />}

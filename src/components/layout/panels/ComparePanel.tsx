@@ -113,7 +113,7 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
       </div>
 
       {/* ── Score banner ──────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Scenario A score */}
         <div className={`bg-white border rounded-2xl p-4 flex flex-col items-center gap-2 shadow-card ${
           aWins > bWins ? 'border-brand-indigo ring-2 ring-brand-indigo/15' : 'border-warm-border'
@@ -152,7 +152,9 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
 
       {/* ── Main comparison table ─────────────────────────────── */}
       <div className="bg-white border border-warm-border rounded-2xl shadow-card overflow-hidden">
-        {/* Column headers */}
+        <div className="w-full overflow-x-auto no-scrollbar">
+          <div className="min-w-[768px]">
+            {/* Column headers */}
         <div className="grid grid-cols-[1.6fr_1fr_1fr_0.8fr_1.4fr] bg-warm-bg/60 border-b border-warm-border text-[10px] font-bold text-warm-muted uppercase tracking-wide font-sans">
           <div className="px-4 py-2.5">Metric</div>
           <div className="px-3 py-2.5 flex items-center gap-1.5">
@@ -251,7 +253,9 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
             </div>
           </div>
         </div>
+       </div>
       </div>
+     </div>
 
       {/* ── Footer actions ────────────────────────────────────── */}
       <div className="flex items-center justify-between bg-white border border-warm-border rounded-2xl px-5 py-3.5 shadow-card">

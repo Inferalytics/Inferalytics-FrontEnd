@@ -81,12 +81,12 @@ export default function SetupPanel() {
           {(!subtab || subtab === 'general') && (
             <div className="flex flex-col gap-5">
               {/* Focal Point */}
-              <div className="grid grid-cols-4 items-start gap-4 pb-4 border-b border-warm-border/40">
-                <div className="col-span-1">
+              <div className="grid grid-cols-1 md:grid-cols-4 items-start gap-4 pb-4 border-b border-warm-border/40">
+                <div className="col-span-1 md:col-span-1">
                   <span className="text-[12px] font-semibold text-warm-text block">Focal point</span>
                   <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">The single outcome we'll optimise.</span>
                 </div>
-                <div className="col-span-3 flex flex-col gap-2">
+                <div className="col-span-1 md:col-span-3 flex flex-col gap-2">
                   <input
                     type="text"
                     value={setup.focalPoint}
@@ -105,32 +105,32 @@ export default function SetupPanel() {
               </div>
 
               {/* Time */}
-              <div className="grid grid-cols-4 items-start gap-4 pb-4 border-b border-warm-border/40">
-                <div className="col-span-1">
+              <div className="grid grid-cols-1 md:grid-cols-4 items-start gap-4 pb-4 border-b border-warm-border/40">
+                <div className="col-span-1 md:col-span-1">
                   <span className="text-[12px] font-semibold text-warm-text block">Time</span>
                   <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">Granularity and horizon.</span>
                 </div>
-                <div className="col-span-3 flex items-center gap-2">
-                  <div className="flex bg-secondary p-0.5 rounded-lg border border-warm-border/40 text-[11px] font-medium text-warm-muted">
+                <div className="col-span-1 md:col-span-3 flex flex-wrap sm:flex-nowrap items-center gap-2">
+                  <div className="flex bg-secondary p-0.5 rounded-lg border border-warm-border/40 text-[11px] font-medium text-warm-muted overflow-x-auto max-w-full no-scrollbar">
                     {['Day', 'Week', 'Month', 'Quarter', 'Year'].map((t) => (
-                      <span key={t} onClick={() => setTimeGranularity(t)} className={`px-2.5 py-1 rounded-md cursor-pointer transition-all ${t === setup.timeGranularity ? 'bg-white text-brand-indigo shadow-sm font-semibold' : 'hover:text-warm-text'}`}>
+                      <span key={t} onClick={() => setTimeGranularity(t)} className={`px-2.5 py-1 rounded-md cursor-pointer transition-all shrink-0 ${t === setup.timeGranularity ? 'bg-white text-brand-indigo shadow-sm font-semibold' : 'hover:text-warm-text'}`}>
                         {t}
                       </span>
                     ))}
                   </div>
-                  <span className="px-2.5 py-1 rounded-lg bg-lavender/30 border border-lavender/50 text-[11.5px] font-mono text-brand-indigo font-semibold shadow-sm">
+                  <span className="px-2.5 py-1 rounded-lg bg-lavender/30 border border-lavender/50 text-[11.5px] font-mono text-brand-indigo font-semibold shadow-sm shrink-0">
                     {setup.timeRange}
                   </span>
                 </div>
               </div>
 
               {/* Segments */}
-              <div className="grid grid-cols-4 items-start gap-4 pb-4 border-b border-warm-border/40">
-                <div className="col-span-1">
+              <div className="grid grid-cols-1 md:grid-cols-4 items-start gap-4 pb-4 border-b border-warm-border/40">
+                <div className="col-span-1 md:col-span-1">
                   <span className="text-[12px] font-semibold text-warm-text block">Segments</span>
                   <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">Detected in your database.</span>
                 </div>
-                <div className="col-span-3 flex flex-wrap gap-1.5">
+                <div className="col-span-1 md:col-span-3 flex flex-wrap gap-1.5">
                   {['Region', 'Product Line', 'Customer Tier', 'Sales Channel'].map((seg) => {
                     const isSel = setup.segments.includes(seg);
                     return (
@@ -158,12 +158,12 @@ export default function SetupPanel() {
               </div>
 
               {/* Parameters */}
-              <div className="grid grid-cols-4 items-start gap-4">
-                <div className="col-span-1">
+              <div className="grid grid-cols-1 md:grid-cols-4 items-start gap-4">
+                <div className="col-span-1 md:col-span-1">
                   <span className="text-[12px] font-semibold text-warm-text block">Parameters</span>
                   <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">Metrics to track and model.</span>
                 </div>
-                <div className="col-span-3 flex flex-wrap gap-1.5">
+                <div className="col-span-1 md:col-span-3 flex flex-wrap gap-1.5">
                   {['Revenue', 'Cost Centre', 'Gross Margin', 'Units Sold', 'CAC'].map((param) => {
                     const isSel = setup.parameters.includes(param);
                     return (

@@ -114,4 +114,8 @@ export interface GlobalState {
   runOptimisation: (callback: () => void) => void;
   runScenarioB: (callback: () => void) => void;
   resetAll: () => void;
+  leftSidebarOpen: boolean;
+  rightSidebarOpen: boolean;
+  setLeftSidebarOpen: (open: boolean) => void;
+  setRightSidebarOpen: (open: boolean) => void;
 }

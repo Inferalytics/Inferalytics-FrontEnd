@@ -55,10 +55,13 @@ export default function RightPanel() {
     }
   };
 
+  const { rightSidebarOpen } = useStore();
   const isThinking = conversation.some((m) => m.isTyping) || isOptimizing;
 
   return (
-    <aside className="w-[360px] h-[calc(100vh-48px)] bg-white/40 backdrop-blur-md border-l border-warm-border/50 flex flex-col justify-between isolate shrink-0 font-sans">
+    <aside className={`fixed lg:static top-12 right-0 z-40 w-[320px] sm:w-[360px] max-w-[85vw] h-[calc(100vh-48px)] bg-white lg:bg-white/40 backdrop-blur-md border-l border-warm-border/50 flex flex-col justify-between isolate shrink-0 font-sans transition-transform duration-300 ease-in-out ${
+      rightSidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
+    }`}>
       {/* 48px Header */}
       <div className="h-12 border-b border-warm-border/40 px-4 flex items-center justify-between bg-white/50 backdrop-blur-sm shrink-0">
         <div className="flex items-center gap-1.5">

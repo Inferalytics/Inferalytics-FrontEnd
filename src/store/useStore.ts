@@ -72,6 +72,8 @@ export const useStore = create<GlobalState>((set, get) => ({
   activeBatchId: 'q2-rev',
   model: 'auto',
   conversation: INITIAL_CONVERSATION,
+  leftSidebarOpen: false,
+  rightSidebarOpen: false,
   setup: {
     focalPoint: 'EGR Growth — Q2 → Q4 2025',
     timeGranularity: 'Quarter',
@@ -359,7 +361,12 @@ export const useStore = create<GlobalState>((set, get) => ({
       relationships: INITIAL_RELATIONSHIPS,
       dimensions: INITIAL_DIMENSIONS(4),
       scenarios: INITIAL_SCENARIOS,
-      optimisationResult: null
+      optimisationResult: null,
+      leftSidebarOpen: false,
+      rightSidebarOpen: false
     });
-  }
+  },
+
+  setLeftSidebarOpen: (open: boolean) => set({ leftSidebarOpen: open }),
+  setRightSidebarOpen: (open: boolean) => set({ rightSidebarOpen: open })
 }));

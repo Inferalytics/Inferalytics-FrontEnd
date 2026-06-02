@@ -11,7 +11,9 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
   const { setScreen } = useStore();
   const navigate = useNavigate();
 
-  const [talkAnimationPhase, setTalkAnimationPhase] = useState<'center' | 'sliding' | 'unfolding' | 'ready'>('center');
+  const [talkAnimationPhase, setTalkAnimationPhase] = useState<'center' | 'sliding' | 'unfolding' | 'ready'>(() => {
+    return sessionStorage.getItem('has_seen_talk_intro') === 'true' ? 'ready' : 'center';
+  });
   const [talkMessages, setTalkMessages] = useState<{ sender: 'ai' | 'user'; text: string }[]>([]);
   const [talkInputText, setTalkInputText] = useState('');
   const chatEndRef = React.useRef<HTMLDivElement>(null);
@@ -23,11 +25,19 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
   }, [talkMessages, talkAnimationPhase]);
 
   useEffect(() => {
+    if (sessionStorage.getItem('has_seen_talk_intro') === 'true') {
+      setTalkAnimationPhase('ready');
+      return;
+    }
+
     setTalkAnimationPhase('center');
 
     const slideTimeout = setTimeout(() => setTalkAnimationPhase('sliding'), 1800);
     const unfoldTimeout = setTimeout(() => setTalkAnimationPhase('unfolding'), 2600);
-    const readyTimeout = setTimeout(() => setTalkAnimationPhase('ready'), 3550);
+    const readyTimeout = setTimeout(() => {
+      setTalkAnimationPhase('ready');
+      sessionStorage.setItem('has_seen_talk_intro', 'true');
+    }, 3550);
 
     return () => {
       clearTimeout(slideTimeout);
@@ -70,19 +80,21 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
 
   return (
     <div className={`max-w-[1320px] w-full mx-auto flex flex-col md:flex-row pb-12 pt-4 relative min-h-[70vh] my-auto px-4 items-center justify-center animate-fade-in transition-all duration-[1200ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
-      talkAnimationPhase === 'center' ? 'gap-0' : 'gap-12 md:gap-24'
+      talkAnimationPhase === 'center' ? 'gap-0' : 'gap-6 md:gap-12 xl:gap-24'
     }`}>
       {/* Left Column: Hero Block + Key Points */}
       <div
         className={`flex flex-col transition-all duration-[1200ms] ease-[cubic-bezier(0.16,1,0.3,1)] select-none z-20 shrink-0 ${
           talkAnimationPhase === 'center'
             ? 'w-full max-w-[720px] scale-115 text-center items-center gap-6 mx-auto'
-            : 'w-full md:w-[36%] max-w-md text-left items-start gap-5'
+            : 'w-full md:w-[36%] max-w-md text-left items-start gap-2 xl:gap-5'
         }`}
       >
         <div
-          className={`h-12 w-12 rounded-2xl bg-gradient-to-tr from-peach to-primary flex items-center justify-center shadow-md animate-pulse-ring transition-transform duration-700 ${
-            talkAnimationPhase === 'center' ? 'scale-115' : 'scale-100'
+          className={`rounded-2xl bg-gradient-to-tr from-peach to-primary items-center justify-center shadow-md animate-pulse-ring transition-transform duration-700 ${
+            talkAnimationPhase === 'center'
+              ? 'flex h-12 w-12 scale-115'
+              : 'hidden xl:flex h-12 w-12 scale-100'
           }`}
         >
           <Sparkles className="h-6 w-6 text-white" />
@@ -92,7 +104,7 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
           className={`font-extrabold leading-tight tracking-tight select-none text-warm-text transition-all duration-[1000ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
             talkAnimationPhase === 'center'
               ? 'text-4xl sm:text-5xl text-center'
-              : 'text-3xl sm:text-4xl text-left'
+              : 'text-lg sm:text-xl xl:text-3xl text-left'
           }`}
         >
           What decision are you trying to make?
@@ -102,17 +114,17 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
           className={`leading-relaxed text-warm-muted transition-all duration-[1000ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
             talkAnimationPhase === 'center'
               ? 'text-[15.5px] max-w-xl text-center'
-              : 'text-[14px] max-w-lg text-left'
+              : 'text-[11.5px] sm:text-[12.5px] xl:text-[14px] max-w-lg text-left'
           }`}
         >
           Tell me about the problem. I'll help you think it through and figure out what data and dimensions we'll need — before we touch any spreadsheets.
         </p>
 
         <div
-          className={`flex flex-col gap-4 mt-2 w-full transition-all duration-[1000ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          className={`hidden xl:flex flex-col gap-4 mt-2 w-full transition-all duration-[1000ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
             talkAnimationPhase === 'center'
-              ? 'opacity-0 max-h-0 overflow-hidden pointer-events-none'
-              : 'opacity-100 max-h-[300px] visible'
+              ? 'opacity-0 xl:max-h-0 overflow-hidden pointer-events-none'
+              : 'opacity-100 xl:max-h-[300px] visible'
           }`}
         >
           {[

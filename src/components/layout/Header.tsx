@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { ModelType } from '../../types';
-import { Sparkles, ChevronDown, LogOut } from 'lucide-react';
+import { Sparkles, ChevronDown, LogOut, Menu, MessageSquare } from 'lucide-react';
 import { UserButton, useUser } from '@clerk/clerk-react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -12,7 +12,11 @@ export default function Header() {
     activeBatchId, 
     setActiveBatch, 
     model, 
-    setModel 
+    setModel,
+    leftSidebarOpen,
+    setLeftSidebarOpen,
+    rightSidebarOpen,
+    setRightSidebarOpen 
   } = useStore();
 
   const { tab } = useParams<{ tab: string }>();
@@ -47,20 +51,31 @@ export default function Header() {
   ];
 
   return (
-    <header className="h-12 w-full bg-transparent px-4 flex items-center justify-between z-40 relative select-none shrink-0 font-sans">
+    <header className="h-12 w-full bg-transparent px-4 flex items-center justify-between z-50 relative select-none shrink-0 font-sans">
       {/* Left: Wordmark & Batch Switcher & Model Selector */}
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/dashboard/talk')}>
           <div className="h-6 w-6 rounded-lg bg-primary flex items-center justify-center shadow-sm">
             <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
           </div>
-          <span className="text-[15px] font-bold tracking-tight text-warm-text">
+          <span className="text-[15px] font-bold tracking-tight text-warm-text hidden sm:inline">
             Inferalytics
           </span>
         </div>
 
+        {/* Mobile Left Sidebar Toggle */}
         {tab !== 'talk' && (
-          <div className="flex items-center gap-3">
+          <button
+            onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+            className="lg:hidden p-1 rounded-lg bg-secondary hover:bg-muted text-warm-text border border-warm-border/50 cursor-pointer flex items-center justify-center shrink-0"
+            title="Toggle sidebar navigator"
+          >
+            <Menu className="h-4 w-4" />
+          </button>
+        )}
+
+        {tab !== 'talk' && (
+          <div className="hidden lg:flex items-center gap-3">
             {/* Batch Switcher */}
             <div className="relative">
               <button 
@@ -68,7 +83,7 @@ export default function Header() {
                   setIsBatchOpen(!isBatchOpen);
                   setIsModelOpen(false);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary hover:bg-muted text-[12px] font-medium text-warm-text transition-all duration-150 shadow-sm border border-warm-border/50 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary hover:bg-muted text-[12px] font-medium text-warm-text transition-all duration-150 shadow-sm border border-warm-border/50 cursor-pointer whitespace-nowrap"
               >
                 <span className="h-1.5 w-1.5 rounded-full bg-brand-indigo animate-pulse"></span>
                 {activeBatch.name}
@@ -121,7 +136,7 @@ export default function Header() {
                   setIsModelOpen(!isModelOpen);
                   setIsBatchOpen(false);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary hover:bg-muted text-[12px] text-warm-text transition-all duration-150 shadow-sm border border-warm-border/50 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary hover:bg-muted text-[12px] text-warm-text transition-all duration-150 shadow-sm border border-warm-border/50 cursor-pointer whitespace-nowrap"
               >
                 <span className="text-[9px] font-bold bg-lavender text-brand-indigo px-1 rounded font-sans uppercase">
                   MODEL
@@ -160,9 +175,9 @@ export default function Header() {
         )}
       </div>
 
-      {/* Centre: Workflow Stepper (shown when activeStep > 0) */}
+      {/* Centre: Workflow Stepper (shown when activeStep > 0, hidden on small viewports) */}
       {activeStep > 0 && (
-        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-white/70 backdrop-blur-md px-3.5 py-1 border border-warm-border rounded-full shadow-sm">
+        <div className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-1.5 bg-white/70 backdrop-blur-md px-3.5 py-1 border border-warm-border rounded-full shadow-sm">
           {/* Step 1: Define */}
           <button
             onClick={() => navigate('/dashboard/setup/general')}
@@ -231,15 +246,26 @@ export default function Header() {
       )}
 
       {/* Right: Screen Navigation & Avatar */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Mobile Right Sidebar Toggle */}
+        {tab !== 'talk' && (
+          <button
+            onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
+            className="lg:hidden p-1 rounded-lg bg-secondary hover:bg-muted text-warm-text border border-warm-border/50 cursor-pointer flex items-center justify-center shrink-0"
+            title="Toggle decision panel"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </button>
+        )}
+
         {/* Segmented Control */}
         {tab !== 'talk' && (
-          <div className="flex items-center gap-0.5 bg-secondary/80 p-0.5 rounded-full border border-warm-border/40">
+          <div className="flex items-center gap-0.5 bg-secondary/80 p-0.5 rounded-full border border-warm-border/40 overflow-x-auto max-w-[140px] sm:max-w-[240px] md:max-w-[360px] lg:max-w-none no-scrollbar whitespace-nowrap">
             {screensList.map(s => (
               <button
                 key={s.path}
                 onClick={() => navigate(`/dashboard/${s.path}`)}
-                className={`px-3 py-1 rounded-full text-[11px] font-medium transition-all duration-200 cursor-pointer ${
+                className={`px-3 py-1 rounded-full text-[11px] font-medium transition-all duration-200 cursor-pointer shrink-0 ${
                   tab === s.path
                     ? 'bg-white text-brand-indigo shadow-sm font-semibold'
                     : 'text-warm-muted hover:text-warm-text hover:bg-white/40'

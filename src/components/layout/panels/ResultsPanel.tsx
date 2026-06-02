@@ -160,7 +160,7 @@ export default function ResultsPanel() {
           <div className="grid grid-cols-12 gap-4">
 
             {/* Left: EGR Gauge */}
-            <div className="col-span-4 bg-white border border-warm-border rounded-2xl p-5 flex flex-col items-center gap-4 shadow-card">
+            <div className="col-span-12 lg:col-span-4 bg-white border border-warm-border rounded-2xl p-5 flex flex-col items-center gap-4 shadow-card">
               <span className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider self-start">EGR Performance</span>
               <EGRGauge target={optimisationResult.target} achieved={optimisationResult.egrAchieved} />
 
@@ -176,7 +176,7 @@ export default function ResultsPanel() {
             </div>
 
             {/* Middle: Metrics */}
-            <div className="col-span-4 bg-white border border-warm-border rounded-2xl overflow-hidden shadow-card flex flex-col">
+            <div className="col-span-12 lg:col-span-4 bg-white border border-warm-border rounded-2xl overflow-hidden shadow-card flex flex-col">
               <div className="px-4 py-3 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/20">
                 <span className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider">Key Metrics</span>
               </div>
@@ -202,7 +202,7 @@ export default function ResultsPanel() {
             </div>
 
             {/* Right: Quarterly breakdown */}
-            <div className="col-span-4 bg-white border border-warm-border rounded-2xl overflow-hidden shadow-card flex flex-col">
+            <div className="col-span-12 lg:col-span-4 bg-white border border-warm-border rounded-2xl overflow-hidden shadow-card flex flex-col">
               <div className="px-4 py-3 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/20 flex items-center justify-between">
                 <span className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider">Quarterly EGR</span>
                 <TrendingUp className="h-3.5 w-3.5 text-brand-indigo" />
@@ -248,7 +248,7 @@ export default function ResultsPanel() {
       {/* ── Scenarios tab ───────────────────────────────────────── */}
       {subtab === 'scenarios' && (
         <div className="flex flex-col gap-5 animate-fade-in flex-1 justify-center items-center min-h-[60vh]">
-          <div className="grid grid-cols-2 gap-5 w-full max-w-[680px] mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full max-w-[680px] mx-auto">
             {scenarios.map((sc, si) => {
               const isA = sc.id === 'A';
               return (

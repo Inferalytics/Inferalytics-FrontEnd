@@ -84,6 +84,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
   const [pinnedIds,       setPinnedIds]       = useState<Set<string>>(new Set(['reg', 'margin']));
   const [selectedId,      setSelectedId]      = useState('rev');
   const [drag,            setDrag]            = useState<{ id: string; ox: number; oy: number } | null>(null);
+  const [zoom,            setZoom]            = useState(1);
   const [solverOpen,      setSolverOpen]      = useState(false);
   const [churnLimit,      setChurnLimit]      = useState(6);
   const [forecastOpen,    setForecastOpen]    = useState(false);
@@ -135,13 +136,13 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
     }
     // Body drag
     const startPos = { ...positions[id] };
-    const ox = e.clientX - startPos.x;
-    const oy = e.clientY - startPos.y;
+    const ox = e.clientX / zoom - startPos.x;
+    const oy = e.clientY / zoom - startPos.y;
 
     setDrag({ id, ox, oy });
     const onMove = (ev: MouseEvent) => setPositions(prev => ({
       ...prev,
-      [id]: { x: Math.max(0, ev.clientX - ox), y: Math.max(0, ev.clientY - oy) },
+      [id]: { x: Math.max(0, ev.clientX / zoom - ox), y: Math.max(0, ev.clientY / zoom - oy) },
     }));
     const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); setDrag(null); };
     window.addEventListener('mousemove', onMove);
@@ -152,7 +153,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
   const updateMouse = (e: React.MouseEvent) => {
     if (!canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
-    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setMousePos({ x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom });
   };
 
   // ── Link: edge click handler ──────────────────────────────────────────────
@@ -193,7 +194,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
     <div className="flex flex-col gap-4 animate-float-up w-full max-w-[920px] mx-auto pt-4">
 
       {/* ── Controls bar ─────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 bg-white border border-warm-border rounded-2xl shadow-float px-3 py-2 z-40 select-none relative overflow-visible">
+      <div className="flex flex-wrap items-center gap-2.5 bg-white border border-warm-border rounded-2xl shadow-float p-3 z-40 select-none relative overflow-visible">
 
         {/* Group 1 — targets */}
         <div className="flex items-center gap-1.5 bg-warm-bg/50 border border-warm-border/60 rounded-xl px-2.5 py-1.5">
@@ -326,12 +327,44 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
       )}
 
       {/* ── Canvas ───────────────────────────────────────────────── */}
-      <div
-        ref={canvasRef}
-        onMouseMove={updateMouse}
-        className="relative w-full"
-        style={{ height: canvasHeight }}
-      >
+      <div className="w-full overflow-x-auto no-scrollbar pb-4 relative">
+        {/* Zoom controls */}
+        <div className="absolute bottom-4 left-4 z-30 flex items-center gap-1 bg-white/90 backdrop-blur-md border border-warm-border p-1.5 rounded-xl shadow-md select-none font-sans">
+          <button
+            type="button"
+            onClick={() => setZoom(z => Math.max(0.5, z - 0.1))}
+            className="h-6 w-6 rounded bg-secondary hover:bg-muted text-warm-text font-bold text-[13px] flex items-center justify-center cursor-pointer transition-colors"
+            title="Zoom Out"
+          >
+            -
+          </button>
+          <span className="text-[10px] font-mono font-bold text-warm-muted px-1 min-w-[36px] text-center">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            onClick={() => setZoom(z => Math.min(1.5, z + 0.1))}
+            className="h-6 w-6 rounded bg-secondary hover:bg-muted text-warm-text font-bold text-[13px] flex items-center justify-center cursor-pointer transition-colors"
+            title="Zoom In"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => setZoom(1)}
+            className="ml-1 px-1.5 py-0.5 rounded bg-brand-indigo/10 hover:bg-brand-indigo/15 text-brand-indigo font-bold text-[9px] uppercase cursor-pointer transition-colors"
+            title="Reset Zoom"
+          >
+            Reset
+          </button>
+        </div>
+ 
+        <div
+          ref={canvasRef}
+          onMouseMove={updateMouse}
+          className="relative min-w-[760px] origin-top-left transition-transform duration-100"
+          style={{ height: canvasHeight, transform: `scale(${zoom})` }}
+        >
         {/* SVG — connections layer. Pointer events enabled per-element. */}
         <svg
           className="absolute inset-0 w-full h-full z-10"
@@ -472,6 +505,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
             </div>
           );
         })}
+        </div>
       </div>
 
       {/* ── Hint bar ─────────────────────────────────────────────── */}

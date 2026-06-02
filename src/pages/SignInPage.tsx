@@ -8,6 +8,10 @@ export default function SignInPage() {
   const { isLoaded, signIn, setActive } = useSignIn();
   const navigate = useNavigate();
 
+  React.useEffect(() => {
+    sessionStorage.removeItem('has_seen_talk_intro');
+  }, []);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);

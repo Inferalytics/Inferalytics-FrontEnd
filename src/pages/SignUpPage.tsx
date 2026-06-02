@@ -8,6 +8,10 @@ export default function SignUpPage() {
   const { isLoaded, signUp, setActive } = useSignUp();
   const navigate = useNavigate();
 
+  React.useEffect(() => {
+    sessionStorage.removeItem('has_seen_talk_intro');
+  }, []);
+
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');

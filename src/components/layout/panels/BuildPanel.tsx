@@ -32,6 +32,7 @@ export default function BuildPanel() {
   const [positions,  setPositions]    = useState(INITIAL_POS);
   const [lines,      setLines]        = useState<Line[]>([]);
   const [drag, setDrag] = useState<{ idx: number; ox: number; oy: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
 
   const canvasRef   = useRef<HTMLDivElement>(null);
   const rightColRef = useRef<HTMLDivElement>(null);
@@ -41,7 +42,7 @@ export default function BuildPanel() {
   const measureLines = useCallback(() => {
     if (!canvasRef.current || !rightColRef.current) return;
     const canvasRect   = canvasRef.current.getBoundingClientRect();
-    const rightX       = rightColRef.current.getBoundingClientRect().left - canvasRect.left;
+    const rightX       = (rightColRef.current.getBoundingClientRect().left - canvasRect.left) / zoom;
 
     const next: Line[] = DIMENSIONS.map((_, i) => {
       const pos  = positions[i];
@@ -52,12 +53,12 @@ export default function BuildPanel() {
       let y2 = y1;
       if (rowEl) {
         const rr = rowEl.getBoundingClientRect();
-        y2 = rr.top - canvasRect.top + rr.height / 2;
+        y2 = (rr.top - canvasRect.top + rr.height / 2) / zoom;
       }
       return { x1, y1, x2: rightX, y2 };
     });
     setLines(next);
-  }, [positions]);
+  }, [positions, zoom]);
 
   useEffect(() => {
     const af = requestAnimationFrame(measureLines);
@@ -69,7 +70,7 @@ export default function BuildPanel() {
   // ── Drag handlers ─────────────────────────────────────────────────────────
   const handleMouseDown = (e: React.MouseEvent, idx: number) => {
     e.preventDefault();
-    setDrag({ idx, ox: e.clientX - positions[idx].x, oy: e.clientY - positions[idx].y });
+    setDrag({ idx, ox: e.clientX / zoom - positions[idx].x, oy: e.clientY / zoom - positions[idx].y });
   };
 
   useEffect(() => {
@@ -80,8 +81,8 @@ export default function BuildPanel() {
       setPositions(prev => {
         const next = [...prev];
         next[drag.idx] = {
-          x: Math.min(Math.max(0, e.clientX - drag.ox), maxX),
-          y: Math.max(0, e.clientY - drag.oy),
+          x: Math.min(Math.max(0, e.clientX / zoom - drag.ox), maxX),
+          y: Math.max(0, e.clientY / zoom - drag.oy),
         };
         return next;
       });
@@ -91,7 +92,7 @@ export default function BuildPanel() {
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-  }, [drag]);
+  }, [drag, zoom]);
 
   const canvasHeight = Math.max(
     560,
@@ -100,14 +101,46 @@ export default function BuildPanel() {
 
   return (
     <div className="flex flex-col gap-4 animate-float-up w-full pt-6">
-      <div className="w-full flex flex-col md:flex-row gap-6 relative">
+      <div className="w-full overflow-x-auto no-scrollbar pb-4 relative">
+        <div className="flex gap-6 relative min-w-[860px]">
 
-        {/* ── Left: draggable canvas ─────────────────────────────── */}
-        <div
-          ref={canvasRef}
-          className="relative shrink-0 w-[260px]"
-          style={{ height: canvasHeight }}
-        >
+          {/* Zoom controls */}
+          <div className="absolute bottom-4 left-4 z-30 flex items-center gap-1 bg-white/90 backdrop-blur-md border border-warm-border p-1.5 rounded-xl shadow-md select-none font-sans">
+            <button
+              type="button"
+              onClick={() => setZoom(z => Math.max(0.5, z - 0.1))}
+              className="h-6 w-6 rounded bg-secondary hover:bg-muted text-warm-text font-bold text-[13px] flex items-center justify-center cursor-pointer transition-colors"
+              title="Zoom Out"
+            >
+              -
+            </button>
+            <span className="text-[10px] font-mono font-bold text-warm-muted px-1 min-w-[36px] text-center">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={() => setZoom(z => Math.min(1.5, z + 0.1))}
+              className="h-6 w-6 rounded bg-secondary hover:bg-muted text-warm-text font-bold text-[13px] flex items-center justify-center cursor-pointer transition-colors"
+              title="Zoom In"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom(1)}
+              className="ml-1 px-1.5 py-0.5 rounded bg-brand-indigo/10 hover:bg-brand-indigo/15 text-brand-indigo font-bold text-[9px] uppercase cursor-pointer transition-colors"
+              title="Reset Zoom"
+            >
+              Reset
+            </button>
+          </div>
+
+          {/* Draggable canvas */}
+          <div
+            ref={canvasRef}
+            className="relative shrink-0 w-[260px] origin-top-left transition-transform duration-100"
+            style={{ height: canvasHeight, transform: `scale(${zoom})` }}
+          >
           {/* SVG connector lines */}
           <svg
             className="absolute inset-0 pointer-events-none z-10 overflow-visible"
@@ -282,6 +315,7 @@ export default function BuildPanel() {
           </div>
         </div>
       </div>
+     </div>
     </div>
   );
 }

@@ -135,11 +135,11 @@ export default function BatchPanel() {
       </div>
 
       {/* ── Main split ─────────────────────────────────────────────── */}
-      <div className="flex gap-5 w-full">
+      <div className="flex flex-col md:flex-row gap-5 w-full">
 
         {/* Left: selectable cards ─────────────────────────────────── */}
-        <div className="flex flex-col gap-3 shrink-0 w-[220px]">
-          <span className="text-[9.5px] font-bold text-warm-muted uppercase tracking-widest pl-0.5">
+        <div className="flex flex-row md:flex-col gap-3 shrink-0 w-full md:w-[220px] overflow-x-auto md:overflow-x-visible pb-2 md:pb-0 no-scrollbar items-stretch">
+          <span className="text-[9.5px] font-bold text-warm-muted uppercase tracking-widest pl-0.5 self-center md:self-start whitespace-nowrap md:whitespace-normal shrink-0">
             Dimensions ({BATCH_CARDS.length})
           </span>
           {BATCH_CARDS.map((d) => {
@@ -148,7 +148,7 @@ export default function BatchPanel() {
               <div
                 key={d.id}
                 onClick={() => toggle(d.id)}
-                className={`w-full bg-white border rounded-2xl shadow-sm overflow-hidden flex flex-col cursor-pointer transition-all duration-150 ${
+                className={`w-full min-w-[200px] md:min-w-0 bg-white border rounded-2xl shadow-sm overflow-hidden flex flex-col cursor-pointer transition-all duration-150 shrink-0 ${
                   isSelected
                     ? 'border-brand-indigo ring-2 ring-brand-indigo/20 shadow-md'
                     : 'border-warm-border hover:border-warm-text/20 hover:shadow-md'

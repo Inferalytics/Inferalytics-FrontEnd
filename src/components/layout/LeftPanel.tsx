@@ -4,7 +4,7 @@ import { FolderUp, Plus, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function LeftPanel() {
-  const { screen, batches, activeBatchId, setActiveBatch } = useStore();
+  const { screen, batches, activeBatchId, setActiveBatch, leftSidebarOpen } = useStore();
   const navigate = useNavigate();
 
   const handleNewBatch = () => {
@@ -22,7 +22,9 @@ export default function LeftPanel() {
   };
 
   return (
-    <aside className="w-[240px] h-[calc(100vh-48px)] bg-white/40 backdrop-blur-md border-r border-warm-border/50 flex flex-col justify-between p-4 select-none isolate shrink-0 font-sans">
+    <aside className={`fixed lg:static top-12 left-0 z-40 w-[240px] h-[calc(100vh-48px)] bg-white lg:bg-white/40 backdrop-blur-md border-r border-warm-border/50 flex flex-col justify-between p-4 select-none isolate shrink-0 font-sans transition-transform duration-300 ease-in-out ${
+      leftSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+    }`}>
       <div className="flex flex-col gap-6 overflow-y-auto no-scrollbar">
         {/* Batches Navigation */}
         <div className="flex flex-col gap-2">

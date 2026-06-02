@@ -13,12 +13,13 @@ const DIMENSIONS = [
   { id: 'prod', name: 'Product Line',  type: 'categorical', samples: ['Enterprise', 'SMB', 'Self-serve'], status: 'busy' },
 ] as const;
 
-const CARD_H = 132;
-const GAP    = 14;
+const CARD_H     = 132;
+const GAP        = 28;
+const TOP_OFFSET = 12;
 
 const INITIAL_POS = DIMENSIONS.map((_, i) => ({
   x: 0,
-  y: i * (CARD_H + GAP),
+  y: TOP_OFFSET + i * (CARD_H + GAP),
 }));
 
 interface Line { x1: number; y1: number; x2: number; y2: number }

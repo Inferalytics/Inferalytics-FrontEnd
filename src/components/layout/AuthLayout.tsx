@@ -20,12 +20,11 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
 
           {/* Top: Wordmark */}
           <div className="flex items-center gap-2.5 select-none shrink-0 relative z-20">
-            <div className="h-6 w-6 rounded-lg bg-primary flex items-center justify-center shadow-md">
-              <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
-            </div>
-            <span className="text-[14px] font-extrabold tracking-tight text-white font-sans uppercase letter-spacing-[0.05em]">
-              Inferalytics
-            </span>
+            <img
+              src="/logo-side.png"
+              alt="Inferalytics"
+              className="h-8 w-auto object-contain brightness-0 invert"
+            />
           </div>
 
           {/* Middle: Rich Copy & High-Fidelity SVG Workspace Mockup */}
@@ -59,8 +58,8 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
               {/* Mock Header (48px) */}
               <div className="h-7 border-b border-[#2B2B30]/60 flex items-center justify-between relative z-10 pb-2">
                 <div className="flex items-center gap-2">
-                  <div className="h-3.5 w-3.5 rounded bg-primary flex items-center justify-center shrink-0">
-                    <Sparkles className="h-2 w-2 text-white" />
+                  <div className="h-3.5 w-3.5 rounded bg-primary flex items-center justify-center shrink-0 overflow-hidden">
+                    <img src="/logo.png" alt="" className="h-3 w-3 object-contain brightness-0 invert" />
                   </div>
                   <span className="text-[9px] font-bold text-zinc-300">Revenue Optimiser</span>
                 </div>

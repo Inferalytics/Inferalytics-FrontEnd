@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { ModelType } from '../../types';
-import { Sparkles, ChevronDown, LogOut, Menu, MessageSquare } from 'lucide-react';
+import { ChevronDown, LogOut, Menu, MessageSquare } from 'lucide-react';
 import { UserButton, useUser } from '@clerk/clerk-react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -54,13 +54,12 @@ export default function Header() {
     <header className="h-12 w-full bg-transparent px-4 flex items-center justify-between z-50 relative select-none shrink-0 font-sans">
       {/* Left: Wordmark & Batch Switcher & Model Selector */}
       <div className="flex items-center gap-6">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/dashboard/talk')}>
-          <div className="h-6 w-6 rounded-lg bg-primary flex items-center justify-center shadow-sm">
-            <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
-          </div>
-          <span className="text-[15px] font-bold tracking-tight text-warm-text hidden sm:inline">
-            Inferalytics
-          </span>
+        <div className="flex items-center cursor-pointer" onClick={() => navigate('/dashboard/talk')}>
+          <img
+            src="/logo-side.png"
+            alt="Inferalytics"
+            className="h-7 w-auto object-contain"
+          />
         </div>
 
         {/* Mobile Left Sidebar Toggle */}

@@ -17,7 +17,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function GuestRoute({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   if (!isLoaded) return null;
-  if (isSignedIn) return <Navigate to="/dashboard/talk" replace />;
+  if (isSignedIn) return <Navigate to="/dashboard/conversation" replace />;
   return <>{children}</>;
 }
 
@@ -29,6 +29,9 @@ export default function App() {
           <Route path="/"        element={<GuestRoute><SignInPage /></GuestRoute>} />
           <Route path="/sign-in" element={<GuestRoute><SignInPage /></GuestRoute>} />
           <Route path="/sign-up" element={<GuestRoute><SignUpPage /></GuestRoute>} />
+
+          {/* Redirect bare /dashboard to conversation tab */}
+          <Route path="/dashboard" element={<Navigate to="/dashboard/conversation" replace />} />
 
           <Route path="/dashboard/:tab"         element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/dashboard/:tab/:subtab" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />

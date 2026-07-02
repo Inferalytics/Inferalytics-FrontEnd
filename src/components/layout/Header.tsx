@@ -279,7 +279,7 @@ export default function Header() {
         {/* User Button / Avatar */}
         <div className="h-7 w-7 rounded-full flex items-center justify-center relative shadow-sm border border-warm-border shrink-0">
           {isLoaded && isSignedIn ? (
-            <UserButton afterSignOutUrl="/sign-in" appearance={{
+            <UserButton afterSignOutUrl="/" appearance={{
               elements: {
                 userButtonAvatarBox: "h-7 w-7",
                 userButtonTrigger: "h-7 w-7 focus:shadow-none"
@@ -294,7 +294,7 @@ export default function Header() {
                   <div className="text-[9px] text-warm-muted truncate">robert@client.com</div>
                 </div>
                 <button 
-                  onClick={() => window.location.href = '/sign-in'}
+                  onClick={() => window.location.href = '/'}
                   className="w-full text-left px-2 py-1 text-red hover:bg-destructive/10 rounded-md text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <LogOut className="h-3 w-3" />

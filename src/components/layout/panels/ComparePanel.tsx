@@ -75,8 +75,85 @@ function DeltaBadge({ trend, delta }: { trend: string; delta: string }) {
 }
 
 export default function ComparePanel({ triggerToast }: ComparePanelProps) {
-  const { egrTarget, model } = useStore();
+  const { egrTarget, model, selectedProvenanceMetric, setSelectedProvenanceMetric, workspaceMetrics } = useStore();
   const navigate = useNavigate();
+
+  const getVal = (metricName: string, defaultVal: string) => {
+    return workspaceMetrics.find(m => m.name.toLowerCase() === metricName.toLowerCase())?.value || defaultVal;
+  };
+
+  const revStr = getVal('Revenue', '$2.40M');
+  const costStr = getVal('Cost Centre', '$980K');
+  const churnStr = getVal('Churn Rate', '4.2%');
+  const marginStr = getVal('Gross Margin', '63.2%');
+  const egrStr = getVal('EGR Achieved', '13.2%');
+
+  const parseValue = (v: string): number => {
+    const clean = v.replace(/[^0-9.]/g, '');
+    let num = parseFloat(clean) || 0;
+    if (v.toLowerCase().includes('m')) return num * 1000000;
+    if (v.toLowerCase().includes('k')) return num * 1000;
+    return num;
+  };
+
+  const revNum = parseValue(revStr);
+  const costNum = parseValue(costStr);
+  const churnNum = parseValue(churnStr);
+  const egrNum = parseValue(egrStr);
+
+  const deltaRev = revNum - 2000000;
+  const deltaRevStr = deltaRev >= 0 ? `+$${(deltaRev/1000).toFixed(0)}K` : `-$${(Math.abs(deltaRev)/1000).toFixed(0)}K`;
+
+  const deltaCost = costNum - 1000000;
+  const deltaCostStr = deltaCost <= 0 ? `−$${(Math.abs(deltaCost)/1000).toFixed(0)}K` : `+$${(deltaCost/1000).toFixed(0)}K`;
+
+  const deltaEgr = egrNum - 11.8;
+  const deltaEgrStr = `${deltaEgr >= 0 ? '+' : ''}${deltaEgr.toFixed(1)}pp`;
+
+  const ROWS = [
+    {
+      metric:   'Forecasted EGR',
+      category: 'Performance',
+      a: '11.8%',  b: egrStr,  delta: deltaEgrStr,
+      winner: egrNum >= 11.8 ? 'b' : 'a', trend: egrNum >= 11.8 ? 'up' : 'down',
+      note: egrNum >= 12 ? `Scenario B exceeds target by ${(egrNum - 12).toFixed(1)}pp` : `Scenario B below target by ${(12 - egrNum).toFixed(1)}pp`,
+    },
+    {
+      metric:   'Revenue Outcome',
+      category: 'Revenue',
+      a: '$2.00M', b: revStr, delta: deltaRevStr,
+      winner: revNum >= 2000000 ? 'b' : 'a', trend: revNum >= 2000000 ? 'up' : 'down',
+      note: `+${((revNum/2000000 - 1)*100 + 8).toFixed(0)}% YoY driven by Q4 Enterprise uplift`,
+    },
+    {
+      metric:   'Cost Allocation',
+      category: 'Cost',
+      a: '$1.00M', b: costStr,  delta: deltaCostStr,
+      winner: costNum <= 1000000 ? 'b' : 'a', trend: costNum <= 1000000 ? 'down' : 'up',
+      note: 'Reduction in Cost Centre allocation',
+    },
+    {
+      metric:   'Churn Rate',
+      category: 'Risk',
+      a: '5.8%',   b: churnStr,   delta: `${(churnNum - 5.8).toFixed(1)}pp`,
+      winner: churnNum <= 5.8 ? 'b' : 'a', trend: churnNum <= 5.8 ? 'down' : 'up',
+      note: churnNum <= 6.0 ? 'Well within 6% constraint' : 'Violates 6% constraint limit',
+    },
+    {
+      metric:   'Gross Margin',
+      category: 'Efficiency',
+      a: '65.1%',  b: marginStr,  delta: `${(parseValue(marginStr) - 65.1).toFixed(1)}pp`,
+      winner: parseValue(marginStr) >= 65.1 ? 'b' : 'a', trend: parseValue(marginStr) >= 65.1 ? 'up' : 'down',
+      note: 'Margin based on ECR cost center allocation',
+    },
+    {
+      metric:   'EGR Gap vs Target',
+      category: 'Performance',
+      a: '−0.2pp', b: `${(egrNum - 12) >= 0 ? '+' : ''}${(egrNum - 12).toFixed(1)}pp`, delta: `${(egrNum - 11.8).toFixed(1)}pp`,
+      winner: egrNum >= 11.8 ? 'b' : 'a', trend: 'up',
+      note: egrNum >= 12 ? 'Target fully met' : 'Target gap remains unsatisfied',
+    }
+  ];
 
   const bWins = ROWS.filter(r => r.winner === 'b').length;
   const aWins = ROWS.filter(r => r.winner === 'a').length;
@@ -101,7 +178,7 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
 
       {/* ── Back + header ─────────────────────────────────────── */}
       <div className="flex items-center justify-between">
-        <button onClick={() => navigate('/dashboard/results/scenarios')}
+        <button onClick={() => navigate('/dashboard/workspace/scenarios')}
           className="flex items-center gap-1.5 bg-white/70 hover:bg-white border border-warm-border px-3 py-1.5 rounded-full shadow-sm text-[11.5px] font-bold text-brand-indigo transition-all cursor-pointer">
           <ArrowLeft className="h-3.5 w-3.5" /> Back to Scenarios
         </button>
@@ -156,7 +233,10 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
           <div className="min-w-[768px]">
             {/* Column headers */}
         <div className="grid grid-cols-[1.6fr_1fr_1fr_0.8fr_1.4fr] bg-warm-bg/60 border-b border-warm-border text-[10px] font-bold text-warm-muted uppercase tracking-wide font-sans">
-          <div className="px-4 py-2.5">Metric</div>
+          <div className="px-4 py-2.5 flex justify-between items-center w-full">
+            <span>Metric</span>
+            <span className="text-[8px] text-brand-indigo font-normal normal-case tracking-normal">click row for provenance</span>
+          </div>
           <div className="px-3 py-2.5 flex items-center gap-1.5">
             <div className="h-2 w-2 rounded-full bg-brand-indigo shrink-0" /> Scenario A
           </div>
@@ -176,30 +256,36 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
               <div className="px-4 py-1.5 bg-warm-bg/30 border-b border-warm-border/40">
                 <span className="text-[9px] font-bold text-warm-muted uppercase tracking-widest">{cat}</span>
               </div>
-              {catRows.map((row) => (
-                <div key={row.metric}
-                  className="grid grid-cols-[1.6fr_1fr_1fr_0.8fr_1.4fr] border-b border-warm-border/30 hover:bg-warm-bg/10 transition-colors items-center">
-                  <div className="px-4 py-3 flex items-center gap-2">
-                    {row.winner === 'b'
-                      ? <Check className="h-3.5 w-3.5 text-sage shrink-0" />
-                      : <AlertTriangle className="h-3.5 w-3.5 text-amber-warm shrink-0" />
-                    }
-                    <span className="text-[12px] font-semibold text-warm-text">{row.metric}</span>
+              {catRows.map((row) => {
+                const isSelected = selectedProvenanceMetric?.toLowerCase() === row.metric.toLowerCase();
+                return (
+                  <div key={row.metric}
+                    onClick={() => setSelectedProvenanceMetric(row.metric)}
+                    className={`grid grid-cols-[1.6fr_1fr_1fr_0.8fr_1.4fr] border-b border-warm-border/30 hover:bg-lavender/5 hover:text-brand-indigo transition-colors items-center cursor-pointer ${
+                      isSelected ? 'bg-lavender/10 font-medium border-l-2 border-brand-indigo' : ''
+                    }`}>
+                    <div className="px-4 py-3 flex items-center gap-2">
+                      {row.winner === 'b'
+                        ? <Check className="h-3.5 w-3.5 text-sage shrink-0" />
+                        : <AlertTriangle className="h-3.5 w-3.5 text-amber-warm shrink-0" />
+                      }
+                      <span className="text-[12px] font-semibold text-warm-text">{row.metric}</span>
+                    </div>
+                    <div className={`px-3 py-3 font-mono text-[12px] ${row.winner === 'a' ? 'font-bold text-brand-indigo' : 'text-warm-muted'}`}>
+                      {row.a}
+                    </div>
+                    <div className={`px-3 py-3 font-mono text-[12px] ${row.winner === 'b' ? 'font-bold text-sage bg-sage-light/20' : 'text-warm-muted'}`}>
+                      {row.b}
+                    </div>
+                    <div className="px-3 py-3 text-[11px]">
+                      <DeltaBadge trend={row.trend} delta={row.delta} />
+                    </div>
+                    <div className="px-3 py-3 text-[10.5px] text-warm-muted leading-snug">
+                      {row.note.replace('{egrTarget}', String(egrTarget))}
+                    </div>
                   </div>
-                  <div className={`px-3 py-3 font-mono text-[12px] ${row.winner === 'a' ? 'font-bold text-brand-indigo' : 'text-warm-muted'}`}>
-                    {row.a}
-                  </div>
-                  <div className={`px-3 py-3 font-mono text-[12px] ${row.winner === 'b' ? 'font-bold text-sage bg-sage-light/20' : 'text-warm-muted'}`}>
-                    {row.b}
-                  </div>
-                  <div className="px-3 py-3 text-[11px]">
-                    <DeltaBadge trend={row.trend} delta={row.delta} />
-                  </div>
-                  <div className="px-3 py-3 text-[10.5px] text-warm-muted leading-snug">
-                    {row.note.replace('{egrTarget}', String(egrTarget))}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           );
         })}

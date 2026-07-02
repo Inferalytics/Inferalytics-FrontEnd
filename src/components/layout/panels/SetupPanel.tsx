@@ -5,23 +5,23 @@ import { useStore } from '../../../store/useStore';
 
 const tableSchemas: Record<string, { col: string; type: string; sample: string }[]> = {
   'q2_revenue_raw.xlsx': [
-    { col: 'customer_id', type: 'VARCHAR(32)', sample: 'cust_9812_ea' },
-    { col: 'revenue_arr', type: 'DECIMAL(12,2)', sample: '$124,500.00' },
-    { col: 'tier', type: 'VARCHAR(16)', sample: 'Enterprise' },
-    { col: 'renewal_quarter', type: 'VARCHAR(4)', sample: 'Q225' },
-    { col: 'region', type: 'VARCHAR(8)', sample: 'EMEA' }
+    { col: 'customer_id', type: 'Text Identifier', sample: 'cust_9812_ea' },
+    { col: 'revenue_arr', type: 'Currency (USD)', sample: '$124,500.00' },
+    { col: 'tier', type: 'Category (Text)', sample: 'Enterprise' },
+    { col: 'renewal_quarter', type: 'Quarter Code', sample: 'Q225' },
+    { col: 'region', type: 'Region Code', sample: 'EMEA' }
   ],
-  'elasticity_matrix_v1.csv': [
-    { col: 'tier_id', type: 'VARCHAR(16)', sample: 'Enterprise' },
-    { col: 'price_sensitivity', type: 'FLOAT', sample: '-1.42' },
-    { col: 'churn_elasticity', type: 'FLOAT', sample: '0.85' },
-    { col: 'confidence_score', type: 'FLOAT', sample: '0.94' }
+  'cost_centre_2024.csv': [
+    { col: 'department_id', type: 'Text Identifier', sample: 'dept_sales_us' },
+    { col: 'budget_allocation', type: 'Currency (USD)', sample: '$450,000.00' },
+    { col: 'headcount', type: 'Integer (Count)', sample: '14' },
+    { col: 'overhead_cost', type: 'Currency (USD)', sample: '$32,100.00' }
   ],
-  'churn_forecasts.json': [
-    { col: 'customer_id', type: 'VARCHAR(32)', sample: 'cust_1105_us' },
-    { col: 'churn_prob', type: 'FLOAT', sample: '0.042' },
-    { col: 'contract_end', type: 'DATE', sample: '2025-10-31' },
-    { col: 'engagement_score', type: 'FLOAT', sample: '9.2' }
+  'region_mapping.json': [
+    { col: 'region_code', type: 'Region Code', sample: 'APAC' },
+    { col: 'market_size', type: 'Currency (USD)', sample: '$2,400,000.00' },
+    { col: 'active_customers', type: 'Integer (Count)', sample: '382' },
+    { col: 'gdp_growth', type: 'Percentage', sample: '4.2%' }
   ]
 };
 
@@ -31,34 +31,39 @@ export default function SetupPanel() {
   const navigate = useNavigate();
   const [inspectedTableId, setInspectedTableId] = useState<string | null>(null);
 
+  const isFocalPointMissing = !setup.focalPoint || !setup.focalPoint.trim();
+  const isSegmentsMissing = !setup.segments || setup.segments.length === 0;
+  const isVariablesMissing = !setup.parameters || setup.parameters.length === 0;
+  const isFormInvalid = isFocalPointMissing || isSegmentsMissing || isVariablesMissing;
+
   return (
-    <div className="flex flex-col gap-6 animate-float-up h-full justify-center">
+    <div className="flex flex-col gap-6 animate-float-up pt-4 max-w-[960px] w-full mx-auto">
       {/* Setup Card */}
-      <div className="max-w-[720px] w-full mx-auto my-auto bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl shadow-float overflow-hidden flex flex-col justify-between transition-all">
+      <div className="w-full bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl shadow-float overflow-hidden flex flex-col justify-between transition-all">
         <div className="p-6 border-b border-warm-border/60 bg-white/40">
           <div className="flex items-start justify-between">
             <div className="flex flex-col animate-fade-in">
               <span className="text-[9.5px] font-bold text-brand-indigo uppercase tracking-wider block mb-1">
-                Step 1 of 3 · World-Model Setup
+                Step 1 of 3 · Business Configuration
               </span>
               <h2 className="text-[18px] font-bold text-warm-text mb-0.5">
-                Define what we're modelling
+                Define simulation focus and strategic drivers
               </h2>
             </div>
 
             <div className="flex bg-secondary p-0.5 rounded-lg border border-warm-border/40 text-[10.5px] font-medium text-warm-muted">
               <button
-                onClick={() => navigate('/dashboard/setup/general')}
+                onClick={() => navigate('/dashboard/blueprint/general')}
                 className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
                   (!subtab || subtab === 'general')
                     ? 'bg-white text-brand-indigo shadow-sm font-semibold'
                     : 'hover:text-warm-text'
                 }`}
               >
-                General Config
+                General Settings
               </button>
               <button
-                onClick={() => navigate('/dashboard/setup/sources')}
+                onClick={() => navigate('/dashboard/blueprint/sources')}
                 className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
                   subtab === 'sources'
                     ? 'bg-white text-brand-indigo shadow-sm font-semibold'
@@ -71,8 +76,8 @@ export default function SetupPanel() {
           </div>
           <p className="text-[12.5px] text-warm-muted mt-2 leading-relaxed">
             {subtab === 'sources'
-              ? 'Inspect raw input files, table definitions, and row counts before vectorisation.'
-              : "Before we touch the data, tell me the focal point. I'll draft the dimensions and relationships from there."
+              ? 'Review baseline performance data, segment details, and transaction volume before starting simulation.'
+              : 'Before importing baseline performance data, define your primary target metric. We will outline the segments and growth variables from there.'
             }
           </p>
         </div>
@@ -83,8 +88,8 @@ export default function SetupPanel() {
               {/* Focal Point */}
               <div className="grid grid-cols-1 md:grid-cols-4 items-start gap-4 pb-4 border-b border-warm-border/40">
                 <div className="col-span-1 md:col-span-1">
-                  <span className="text-[12px] font-semibold text-warm-text block">Focal point</span>
-                  <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">The single outcome we'll optimise.</span>
+                  <span className="text-[12px] font-semibold text-warm-text block">Primary Target Metric</span>
+                  <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">The core financial or operational result to model and improve.</span>
                 </div>
                 <div className="col-span-1 md:col-span-3 flex flex-col gap-2">
                   <input
@@ -107,8 +112,8 @@ export default function SetupPanel() {
               {/* Time */}
               <div className="grid grid-cols-1 md:grid-cols-4 items-start gap-4 pb-4 border-b border-warm-border/40">
                 <div className="col-span-1 md:col-span-1">
-                  <span className="text-[12px] font-semibold text-warm-text block">Time</span>
-                  <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">Granularity and horizon.</span>
+                  <span className="text-[12px] font-semibold text-warm-text block">Planning Horizon</span>
+                  <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">Determine time increment and forecast duration.</span>
                 </div>
                 <div className="col-span-1 md:col-span-3 flex flex-wrap sm:flex-nowrap items-center gap-2">
                   <div className="flex bg-secondary p-0.5 rounded-lg border border-warm-border/40 text-[11px] font-medium text-warm-muted overflow-x-auto max-w-full no-scrollbar">
@@ -127,8 +132,8 @@ export default function SetupPanel() {
               {/* Segments */}
               <div className="grid grid-cols-1 md:grid-cols-4 items-start gap-4 pb-4 border-b border-warm-border/40">
                 <div className="col-span-1 md:col-span-1">
-                  <span className="text-[12px] font-semibold text-warm-text block">Segments</span>
-                  <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">Detected in your database.</span>
+                  <span className="text-[12px] font-semibold text-warm-text block">Strategic Segments</span>
+                  <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">Customer groups or regions to analyze.</span>
                 </div>
                 <div className="col-span-1 md:col-span-3 flex flex-wrap gap-1.5">
                   {['Region', 'Product Line', 'Customer Tier', 'Sales Channel'].map((seg) => {
@@ -160,8 +165,8 @@ export default function SetupPanel() {
               {/* Parameters */}
               <div className="grid grid-cols-1 md:grid-cols-4 items-start gap-4">
                 <div className="col-span-1 md:col-span-1">
-                  <span className="text-[12px] font-semibold text-warm-text block">Parameters</span>
-                  <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">Metrics to track and model.</span>
+                  <span className="text-[12px] font-semibold text-warm-text block">Growth & Cost Variables</span>
+                  <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">Metrics to project and simulate.</span>
                 </div>
                 <div className="col-span-1 md:col-span-3 flex flex-wrap gap-1.5">
                   {['Revenue', 'Cost Centre', 'Gross Margin', 'Units Sold', 'CAC'].map((param) => {
@@ -189,61 +194,139 @@ export default function SetupPanel() {
                   </span>
                 </div>
               </div>
+
+              {isFormInvalid && (
+                <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-xl text-[12px] font-medium flex items-center gap-2 select-none animate-fade-in mt-4">
+                  <span>⚠️</span>
+                  <span>
+                    <strong>Required Configuration Missing:</strong> Configure a {isFocalPointMissing && 'Primary Target Metric'}{isFocalPointMissing && (isSegmentsMissing || isVariablesMissing) && ' & '}{isSegmentsMissing && 'at least one Strategic Segment'}{(isSegmentsMissing || isFocalPointMissing) && isVariablesMissing && ' & '}{isVariablesMissing && 'at least one Growth Variable'} before proceeding.
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
           {subtab === 'sources' && (
-            <div className="flex flex-col gap-4 animate-fade-in">
-              <span className="text-[11px] font-bold text-warm-muted uppercase tracking-[0.08em] select-none block mb-1">
-                Active Spreadsheet Tables ({setup.sources.length})
-              </span>
-              <div className="flex flex-col gap-2.5">
-                {setup.sources.map((src, sIdx) => {
-                  const isInspected = inspectedTableId === src.name;
-                  return (
-                    <div key={sIdx} className="flex flex-col rounded-xl bg-warm-bg border border-warm-border/60 overflow-hidden transition-all duration-200">
-                      <div
-                        onClick={() => setInspectedTableId(isInspected ? null : src.name)}
-                        className="flex items-center justify-between p-3.5 hover:bg-white transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="h-7 w-7 rounded-lg bg-lavender/35 border border-lavender/40 flex items-center justify-center">
-                            <FileText className="h-4 w-4 text-brand-indigo" />
-                          </div>
-                          <span className="text-[12px] font-bold font-mono text-warm-text truncate max-w-[240px]">
-                            {src.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-[10px] font-mono text-warm-muted">
-                            {src.fields} fields · {src.rows.toLocaleString()} rows
-                          </span>
-                          <span className="text-[10.5px] font-semibold text-brand-indigo hover:underline">
-                            {isInspected ? 'Collapse Schema' : 'Inspect Columns'}
-                          </span>
-                        </div>
+            <div className="flex flex-col gap-6 animate-fade-in">
+              {/* Requirements Checklist */}
+              <div className="border border-warm-border rounded-xl bg-warm-bg/40 p-4 flex flex-col gap-3">
+                <span className="text-[11px] font-bold text-warm-muted uppercase tracking-wider block">
+                  Scenario Requirements Checklist
+                </span>
+                
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-start justify-between text-[12px] bg-white p-2.5 rounded-lg border border-warm-border/50">
+                    <div className="flex items-center gap-2">
+                      <div className="h-5 w-5 rounded-full bg-sage-light border border-sage-border flex items-center justify-center">
+                        <span className="text-[9px] font-bold text-sage">✓</span>
                       </div>
-
-                      {isInspected && (
-                        <div className="border-t border-warm-border/40 bg-white/70 p-3.5 flex flex-col gap-2 animate-float-up">
-                          <span className="text-[10px] font-bold text-warm-muted uppercase tracking-wider block mb-1">Column Definitions</span>
-                          <div className="grid grid-cols-3 gap-2 text-[10px] font-mono border-b border-warm-border/30 pb-1.5 mb-1 text-warm-muted font-sans font-bold">
-                            <span>Field Name</span>
-                            <span>Data Type</span>
-                            <span>Sample Value</span>
-                          </div>
-                          {tableSchemas[src.name]?.map((col, cIdx) => (
-                            <div key={cIdx} className="grid grid-cols-3 gap-2 text-[10.5px] font-mono py-1 border-b border-warm-bg/50 last:border-0 hover:bg-muted/30 px-1 rounded transition-colors font-sans">
-                              <span className="font-semibold font-mono text-warm-text">{col.col}</span>
-                              <span className="text-brand-indigo font-mono">{col.type}</span>
-                              <span className="text-warm-muted font-mono">{col.sample}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                      <div>
+                        <span className="font-semibold text-warm-text block">Historical Revenue & Pricing Baseline</span>
+                        <span className="text-[10px] text-warm-muted">Provided by q2_revenue_raw.xlsx</span>
+                      </div>
                     </div>
-                  );
-                })}
+                    <span className="px-2 py-0.5 rounded bg-sage-light text-sage border border-sage-border text-[9px] font-bold uppercase">Ready</span>
+                  </div>
+
+                  <div className="flex items-start justify-between text-[12px] bg-white p-2.5 rounded-lg border border-warm-border/50">
+                    <div className="flex items-center gap-2">
+                      <div className="h-5 w-5 rounded-full bg-sage-light border border-sage-border flex items-center justify-center">
+                        <span className="text-[9px] font-bold text-sage">✓</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-warm-text block">Cost Allocation Structure</span>
+                        <span className="text-[10px] text-warm-muted">Provided by cost_centre_2024.csv</span>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-sage-light text-sage border border-sage-border text-[9px] font-bold uppercase">Ready</span>
+                  </div>
+
+                  <div className="flex items-start justify-between text-[12px] bg-white p-2.5 rounded-lg border border-warm-border/50">
+                    <div className="flex items-center gap-2">
+                      <div className="h-5 w-5 rounded-full bg-sage-light border border-sage-border flex items-center justify-center">
+                        <span className="text-[9px] font-bold text-sage">✓</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-warm-text block">Market Segment Mapping</span>
+                        <span className="text-[10px] text-warm-muted">Provided by region_mapping.json</span>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-sage-light text-sage border border-sage-border text-[9px] font-bold uppercase">Ready</span>
+                  </div>
+
+                  {/* Missing/Recommended Elasticity Data */}
+                  <div className="flex items-start justify-between text-[12px] bg-[#FFF2EE] p-2.5 rounded-lg border border-peach/30">
+                    <div className="flex items-center gap-2">
+                      <div className="h-5 w-5 rounded-full bg-peach/10 border border-peach/30 flex items-center justify-center">
+                        <span className="text-[11px] font-bold text-brand-indigo">!</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-brand-indigo block">Price Elasticity Curves (.csv)</span>
+                        <span className="text-[10px] text-warm-muted">Highly recommended to enable custom churn projections.</span>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-peach-light text-brand-indigo border border-peach/20 text-[9px] font-bold uppercase">Pending</span>
+                  </div>
+                </div>
+
+                <div className="text-[10.5px] text-warm-muted leading-normal mt-1 p-2.5 bg-white border border-warm-border/40 rounded-lg">
+                  💡 <strong>Simulation Advice:</strong> You can proceed without custom elasticity data. The engine will auto-apply baseline sensitivity coefficients derived from your historical renewal patterns.
+                </div>
+              </div>
+
+              {/* Active Sources List */}
+              <div className="flex flex-col gap-2">
+                <span className="text-[11px] font-bold text-warm-muted uppercase tracking-[0.08em] select-none block mb-1">
+                  Active Spreadsheet Tables ({setup.sources.length})
+                </span>
+                <div className="flex flex-col gap-2.5">
+                  {setup.sources.map((src, sIdx) => {
+                    const isInspected = inspectedTableId === src.name;
+                    return (
+                      <div key={sIdx} className="flex flex-col rounded-xl bg-warm-bg border border-warm-border/60 overflow-hidden transition-all duration-200">
+                        <div
+                          onClick={() => setInspectedTableId(isInspected ? null : src.name)}
+                          className="flex items-center justify-between p-3.5 hover:bg-white transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-7 w-7 rounded-lg bg-lavender/35 border border-lavender/40 flex items-center justify-center">
+                              <FileText className="h-4 w-4 text-brand-indigo" />
+                            </div>
+                            <span className="text-[12px] font-bold font-mono text-warm-text truncate max-w-[240px]">
+                              {src.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-[10px] text-warm-muted font-sans font-semibold">
+                              {src.fields} metrics · {src.rows.toLocaleString()} historical records
+                            </span>
+                            <span className="text-[10.5px] font-semibold text-brand-indigo hover:underline">
+                              {isInspected ? 'Collapse Details' : 'Review Columns'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {isInspected && (
+                          <div className="border-t border-warm-border/40 bg-white/70 p-3.5 flex flex-col gap-2 animate-float-up">
+                            <span className="text-[10px] font-bold text-warm-muted uppercase tracking-wider block mb-1">Data Field Definitions</span>
+                            <div className="grid grid-cols-3 gap-2 text-[10px] font-mono border-b border-warm-border/30 pb-1.5 mb-1 text-warm-muted font-sans font-bold">
+                              <span>Metric Field</span>
+                              <span>Format</span>
+                              <span>Sample Record</span>
+                            </div>
+                            {tableSchemas[src.name]?.map((col, cIdx) => (
+                              <div key={cIdx} className="grid grid-cols-3 gap-2 text-[10.5px] font-mono py-1 border-b border-warm-bg/50 last:border-0 hover:bg-muted/30 px-1 rounded transition-colors font-sans">
+                                <span className="font-semibold font-mono text-warm-text">{col.col}</span>
+                                <span className="text-brand-indigo font-sans">{col.type}</span>
+                                <span className="text-warm-muted font-sans">{col.sample}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
@@ -253,25 +336,26 @@ export default function SetupPanel() {
         <div className="p-4 bg-warm-bg border-t border-warm-border flex items-center justify-between shrink-0 font-sans">
           <span className="text-[11px] text-warm-muted">
             {subtab === 'sources'
-              ? `${setup.sources.length} sources parsed successfully`
-              : `3 sources · ${setup.segments.length + setup.parameters.length + 1} dimensions selected`
+              ? `${setup.sources.length} baseline datasets loaded successfully`
+              : `3 baseline datasets · ${setup.segments.length + setup.parameters.length + 1} business variables configured`
             }
           </span>
           <div className="flex items-center gap-2">
             <button className="px-3 py-1.5 border border-warm-border bg-white hover:bg-secondary rounded-lg text-[12px] font-semibold text-warm-text transition-colors cursor-pointer font-sans">
-              Save draft
+              Save Draft
             </button>
             <button
               onClick={() => {
                 if (subtab === 'sources') {
-                  navigate('/dashboard/setup/general');
+                  navigate('/dashboard/blueprint/general');
                 } else {
-                  navigate('/dashboard/build');
+                  navigate('/dashboard/ecr-build');
                 }
               }}
-              className="px-4 py-1.5 bg-brand-indigo hover:opacity-90 active:opacity-100 text-white rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center gap-1 cursor-pointer font-sans"
+              disabled={(!subtab || subtab === 'general') && isFormInvalid}
+              className="px-4 py-1.5 bg-brand-indigo hover:opacity-90 active:opacity-100 text-white rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center gap-1 cursor-pointer font-sans disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {subtab === 'sources' ? 'View Config' : 'Continue to Model Construction'}
+              {subtab === 'sources' ? 'View Setup Summary' : 'Proceed to Simulation Builder'}
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>

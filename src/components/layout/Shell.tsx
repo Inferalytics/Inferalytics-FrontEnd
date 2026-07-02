@@ -8,13 +8,13 @@ import RightPanel from './RightPanel';
 
 // Sync dictionary mapping nested route slugs to spec screens
 const routeTabMap: Record<string, number> = {
-  talk: 1,
-  setup: 2,
-  build: 3,
-  batch: 4,
-  optimise: 5,
-  results: 6,
-  compare: 7
+  conversation: 1,
+  blueprint: 2,
+  'ecr-build': 3,
+  'ecr-batch': 4,
+  'ips-engine': 5,
+  workspace: 6,
+  learning: 7
 };
 
 export default function Shell() {
@@ -37,23 +37,25 @@ export default function Shell() {
 
   // Canonical redirection for nested views that have default subtabs
   useEffect(() => {
-    if (tab === 'setup' && !subtab) {
-      navigate('/dashboard/setup/general', { replace: true });
-    } else if (tab === 'build' && !subtab) {
-      navigate('/dashboard/build/dimensions', { replace: true });
-    } else if (tab === 'results' && !subtab) {
-      navigate('/dashboard/results/summary', { replace: true });
+    if (tab === 'blueprint' && !subtab) {
+      navigate('/dashboard/blueprint/general', { replace: true });
+    } else if (tab === 'ecr-build' && !subtab) {
+      navigate('/dashboard/ecr-build/dimensions', { replace: true });
+    } else if (tab === 'workspace' && !subtab) {
+      navigate('/dashboard/workspace/summary', { replace: true });
     }
   }, [tab, subtab, navigate]);
 
-  // Close drawers when navigating between tabs
+  // Close mobile drawers when navigating between tabs
   useEffect(() => {
-    setLeftSidebarOpen(false);
-    setRightSidebarOpen(false);
+    if (window.innerWidth < 1024) {
+      setLeftSidebarOpen(false);
+      setRightSidebarOpen(false);
+    }
   }, [tab, subtab, setLeftSidebarOpen, setRightSidebarOpen]);
 
   // Hide side panels on screen 01 (talk) to maintain full bleed conversation grid
-  const showPanels = tab !== 'talk';
+  const showPanels = tab !== 'conversation';
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-warm-gradient select-none">

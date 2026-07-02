@@ -75,11 +75,21 @@ function Spark({ color, path }: { color: string; path: string }) {
 }
 
 export default function ResultsPanel() {
-  const { egrTarget, optimisationResult, scenarios, toggleScenarioChecked, model } = useStore();
+  const { egrTarget, optimisationResult, scenarios, toggleScenarioChecked, model, selectedProvenanceMetric, setSelectedProvenanceMetric, workspaceMetrics } = useStore();
   const { subtab } = useParams<{ subtab?: string }>();
   const navigate   = useNavigate();
 
   const noResult = !optimisationResult;
+
+  React.useEffect(() => {
+    const activeChecked = scenarios.filter(s => s.checked);
+    if (activeChecked.length === 2) {
+      const timer = setTimeout(() => {
+        navigate('/dashboard/learning');
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [scenarios, navigate]);
 
   return (
     <div className="w-full flex flex-col gap-5 animate-float-up pt-4 max-w-[960px] mx-auto">
@@ -99,13 +109,13 @@ export default function ResultsPanel() {
         </div>
 
         <div className="flex bg-secondary p-0.5 rounded-lg border border-warm-border/40 text-[10.5px] font-medium text-warm-muted">
-          <button onClick={() => navigate('/dashboard/results/summary')}
+          <button onClick={() => navigate('/dashboard/workspace/summary')}
             className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
               (!subtab || subtab === 'summary') ? 'bg-white text-brand-indigo shadow-sm font-semibold' : 'hover:text-warm-text'
             }`}>
             Summary
           </button>
-          <button onClick={() => navigate('/dashboard/results/scenarios')}
+          <button onClick={() => navigate('/dashboard/workspace/scenarios')}
             className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
               subtab === 'scenarios' ? 'bg-white text-brand-indigo shadow-sm font-semibold' : 'hover:text-warm-text'
             }`}>
@@ -120,11 +130,11 @@ export default function ResultsPanel() {
           <div className="h-12 w-12 rounded-2xl bg-secondary flex items-center justify-center">
             <AlertCircle className="h-6 w-6 text-warm-muted" />
           </div>
-          <span className="text-[13px] font-semibold text-warm-text">No optimisation result yet</span>
-          <span className="text-[12px] text-warm-muted">Run the optimiser from the Optimise screen first.</span>
-          <button onClick={() => navigate('/dashboard/optimise')}
+          <span className="text-[13px] font-semibold text-warm-text">No IPS solver results yet</span>
+          <span className="text-[12px] text-warm-muted">Run the solver from the IPS Engine screen first.</span>
+          <button onClick={() => navigate('/dashboard/ips-engine')}
             className="flex items-center gap-1.5 px-4 py-2 bg-brand-indigo text-white rounded-xl text-[12px] font-bold cursor-pointer hover:opacity-90 transition-colors">
-            Go to Optimise <ArrowRight className="h-3.5 w-3.5" />
+            Go to IPS Engine <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
@@ -160,8 +170,16 @@ export default function ResultsPanel() {
           <div className="grid grid-cols-12 gap-4">
 
             {/* Left: EGR Gauge */}
-            <div className="col-span-12 lg:col-span-4 bg-white border border-warm-border rounded-2xl p-5 flex flex-col items-center gap-4 shadow-card">
-              <span className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider self-start">EGR Performance</span>
+            <div
+              onClick={() => setSelectedProvenanceMetric('EGR Achieved')}
+              className={`col-span-12 lg:col-span-4 bg-white border rounded-2xl p-5 flex flex-col items-center gap-4 shadow-card hover:bg-lavender/5 hover:border-brand-indigo/35 transition-all cursor-pointer group ${
+                selectedProvenanceMetric === 'EGR Achieved' ? 'ring-2 ring-brand-indigo/20 border-brand-indigo' : 'border-warm-border'
+              }`}
+            >
+              <span className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider self-start flex justify-between w-full items-center">
+                EGR Performance
+                <span className="text-[8px] text-brand-indigo font-normal normal-case opacity-0 group-hover:opacity-100 transition-opacity">click to inspect</span>
+              </span>
               <EGRGauge target={optimisationResult.target} achieved={optimisationResult.egrAchieved} />
 
               {/* Insights */}
@@ -177,12 +195,19 @@ export default function ResultsPanel() {
 
             {/* Middle: Metrics */}
             <div className="col-span-12 lg:col-span-4 bg-white border border-warm-border rounded-2xl overflow-hidden shadow-card flex flex-col">
-              <div className="px-4 py-3 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/20">
+              <div className="px-4 py-3 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/20 flex justify-between items-center">
                 <span className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider">Key Metrics</span>
+                <span className="text-[8px] text-brand-indigo lowercase">click row for provenance</span>
               </div>
               <div className="flex flex-col divide-y divide-warm-border/40">
-                {METRICS.map((m, i) => (
-                  <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-warm-bg/15 transition-colors">
+                {workspaceMetrics.map((m, i) => (
+                  <div
+                    key={i}
+                    onClick={() => setSelectedProvenanceMetric(m.name)}
+                    className={`flex items-center justify-between px-4 py-2.5 hover:bg-lavender/5 hover:text-brand-indigo transition-colors cursor-pointer group ${
+                      selectedProvenanceMetric === m.name ? 'bg-lavender/10 border-l-2 border-brand-indigo font-medium' : ''
+                    }`}
+                  >
                     <span className="text-[12px] font-semibold text-warm-text">{m.name}</span>
                     <div className="flex items-center gap-2">
                       <span className="text-[12px] font-bold font-mono text-warm-text">{m.value}</span>
@@ -235,7 +260,7 @@ export default function ResultsPanel() {
 
               <div className="px-4 py-2.5 border-t border-warm-border/40 flex items-center justify-between text-[10.5px]">
                 <span className="text-warm-muted">Peak Q4 2025</span>
-                <button onClick={() => navigate('/dashboard/results/scenarios')}
+                <button onClick={() => navigate('/dashboard/workspace/scenarios')}
                   className="text-brand-indigo font-semibold hover:underline cursor-pointer flex items-center gap-1">
                   View scenarios <ArrowRight className="h-3 w-3" />
                 </button>
@@ -348,9 +373,18 @@ export default function ResultsPanel() {
                 {scenarios.every(s => s.checked) && ' — launching comparison…'}
               </span>
             </div>
-            <span className="text-[10.5px] text-warm-muted font-mono">
-              Select both to open trade-off view
-            </span>
+            {scenarios.every(s => s.checked) ? (
+              <button
+                onClick={() => navigate('/dashboard/learning')}
+                className="px-3 py-1 bg-sage hover:bg-sage/90 text-white rounded-lg text-[10.5px] font-bold shadow-sm transition-colors cursor-pointer"
+              >
+                Proceed to Learning →
+              </button>
+            ) : (
+              <span className="text-[10.5px] text-warm-muted font-mono">
+                Select both to open trade-off view
+              </span>
+            )}
           </div>
         </div>
       )}

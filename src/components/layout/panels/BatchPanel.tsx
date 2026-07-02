@@ -13,6 +13,19 @@ const BATCH_CARDS = [
 
 type CardId = typeof BATCH_CARDS[number]['id'];
 
+const ECR_ASSETS = [
+  { id: 'ontology', name: 'Decision Ontology', desc: 'Ontological tags & vocabulary', details: 'Core entity definitions: Quarter (temporal dimension), Revenue (financial outcome target), Region (geographic dimension), and Product Line (segmentation factor). Mapped to enterprise schema.' },
+  { id: 'network', name: 'Relationship Network', desc: 'Active node connectivity map', details: 'Defined links: Quarter ➔ Revenue (time series), Region ↔ Revenue (geographic correlation), Product Line ➔ Cost Centre (allocation rule), Cost Centre ↔ Gross Margin (derived ratio).' },
+  { id: 'rules', name: 'Business Rules', desc: 'System constraints & bounds', details: 'Hard Constraints: Customer renewal churn must remain ≤ 6.0% post price adjustments. Soft Constraints: Cost centre budget variance must not exceed ±10%.' },
+  { id: 'model', name: 'Data Model', desc: 'Underlying spreadsheet files', details: 'Spreadsheets linked: q2_revenue_raw.xlsx (18 fields, 4,210 rows), cost_centre_2024.csv (9 fields, 1,802 rows), and region_mapping.json (6 fields, 142 rows).' },
+  { id: 'history', name: 'Decision History', desc: 'Past strategic outcomes', details: 'Reference cohort: 5% uniform price increase executed 18 months ago. Results: 3.8% peak churn, +4.2% net ARR change. Used as model priors.' },
+  { id: 'sim_history', name: 'Simulation History', desc: 'Active scenarios configurations', details: 'Configured projections: Scenario A (Baseline 8% YoY revenue growth), Scenario B (Optimised Newton-Raphson 18% uplift + 6% Cost Centre reduction).' },
+  { id: 'expert', name: 'Expert Knowledge', desc: 'Human-anchored constraints', details: 'Static anchors: Region multipliers and Gross Margin ratios pinned to static Q3 parameters based on CFO directives.' },
+  { id: 'confidence', name: 'Confidence Scores', desc: 'AI confidence ratings', details: 'Confidence indices: Ontology parsing (98%), Relationship correlation (92%), Churn predictive fit (94%). Composite ECR confidence score: 94.6%.' },
+  { id: 'behavior', name: 'Learned Behaviors', desc: 'Elasticities & agent curves', details: 'Segment parameters: Calculated Enterprise price elasticity coefficient of -1.45. Churn curve escalates exponentially when price change exceeds 10%.' },
+  { id: 'causal', name: 'Causal Relationships', desc: 'Optimisation impact paths', details: 'Causality stream: Strategic Price uplift % ➔ Segment Renewal Churn ➔ Operating Margin expansion ➔ Net EGR Achieved.' }
+];
+
 // ── Mock data keyed by dimension id ─────────────────────────────────────────
 const MOCK_DATA: Record<CardId, { columns: string[]; rows: string[][] }> = {
   rev: {
@@ -87,6 +100,7 @@ function getMergedTable(ids: CardId[]) {
 export default function BatchPanel() {
   const navigate = useNavigate();
   const [selected, setSelected] = useState<Set<CardId>>(new Set(['rev']));
+  const [expandedEcrAsset, setExpandedEcrAsset] = useState<string | null>(null);
 
   const toggle = (id: CardId) => {
     setSelected(prev => {
@@ -127,67 +141,106 @@ export default function BatchPanel() {
           </span>
         </div>
         <button
-          onClick={() => navigate('/dashboard/optimise')}
+          onClick={() => navigate('/dashboard/ips-engine')}
           className="px-4 py-1.5 bg-brand-indigo hover:opacity-90 text-white rounded-xl text-[12px] font-bold shadow-sm flex items-center gap-1.5 cursor-pointer transition-colors"
         >
-          Continue to Optimise <ArrowRight className="h-3.5 w-3.5" />
+          Continue to IPS Engine <ArrowRight className="h-3.5 w-3.5" />
         </button>
       </div>
 
       {/* ── Main split ─────────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row gap-5 w-full">
 
-        {/* Left: selectable cards ─────────────────────────────────── */}
-        <div className="flex flex-row md:flex-col gap-3 shrink-0 w-full md:w-[220px] overflow-x-auto md:overflow-x-visible pb-2 md:pb-0 no-scrollbar items-stretch">
-          <span className="text-[9.5px] font-bold text-warm-muted uppercase tracking-widest pl-0.5 self-center md:self-start whitespace-nowrap md:whitespace-normal shrink-0">
-            Dimensions ({BATCH_CARDS.length})
-          </span>
-          {BATCH_CARDS.map((d) => {
-            const isSelected = selected.has(d.id);
-            return (
-              <div
-                key={d.id}
-                onClick={() => toggle(d.id)}
-                className={`w-full min-w-[200px] md:min-w-0 bg-white border rounded-2xl shadow-sm overflow-hidden flex flex-col cursor-pointer transition-all duration-150 shrink-0 ${
-                  isSelected
-                    ? 'border-brand-indigo ring-2 ring-brand-indigo/20 shadow-md'
-                    : 'border-warm-border hover:border-warm-text/20 hover:shadow-md'
-                }`}
-              >
-                <div className="p-3 pb-2 flex flex-col gap-1 font-sans">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[12px] font-bold text-warm-text">{d.name}</span>
-                    <div className={`h-4 w-4 rounded-full border flex items-center justify-center transition-all ${
+        {/* Left sidebar stack: Dimensions + ECR World Model Assets */}
+        <div className="flex flex-col gap-4 shrink-0 w-full md:w-[220px]">
+          {/* Dimensions selectable list */}
+          <div className="flex flex-col gap-3">
+            <span className="text-[9.5px] font-bold text-warm-muted uppercase tracking-widest pl-0.5">
+              Dimensions ({BATCH_CARDS.length})
+            </span>
+            <div className="flex flex-row md:flex-col gap-3 overflow-x-auto md:overflow-x-visible pb-2 md:pb-0 no-scrollbar items-stretch">
+              {BATCH_CARDS.map((d) => {
+                const isSelected = selected.has(d.id);
+                return (
+                  <div
+                    key={d.id}
+                    onClick={() => toggle(d.id)}
+                    className={`w-full min-w-[200px] md:min-w-0 bg-white border rounded-2xl shadow-sm overflow-hidden flex flex-col cursor-pointer transition-all duration-150 shrink-0 ${
                       isSelected
-                        ? 'bg-brand-indigo border-brand-indigo'
-                        : 'border-warm-border bg-white'
-                    }`}>
-                      {isSelected && <Check className="h-2.5 w-2.5 text-white" />}
+                        ? 'border-brand-indigo ring-2 ring-brand-indigo/20 shadow-md'
+                        : 'border-warm-border hover:border-warm-text/20 hover:shadow-md'
+                    }`}
+                  >
+                    <div className="p-3 pb-2 flex flex-col gap-1 font-sans">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[12px] font-bold text-warm-text">{d.name}</span>
+                        <div className={`h-4 w-4 rounded-full border flex items-center justify-center transition-all ${
+                          isSelected
+                            ? 'bg-brand-indigo border-brand-indigo'
+                            : 'border-warm-border bg-white'
+                        }`}>
+                          {isSelected && <Check className="h-2.5 w-2.5 text-white" />}
+                        </div>
+                      </div>
+                      <span className={`w-fit text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${
+                        d.type === 'numeric'     ? 'bg-lavender/30 text-brand-indigo' :
+                        d.type === 'categorical' ? 'bg-amber-warm-light text-amber-warm' :
+                                                  'bg-sage-light text-sage'
+                      }`}>{d.type}</span>
+                    </div>
+
+                    <div className="px-3 pb-2.5 flex flex-col gap-0.5 border-b border-warm-border/30">
+                      {d.samples.map((s, si) => (
+                        <span key={si} className="text-[10.5px] font-mono text-warm-muted leading-tight">{s}</span>
+                      ))}
+                    </div>
+
+                    <div className="px-3 py-1.5 flex items-center gap-1.5">
+                      {d.status === 'ok' ? (
+                        <><span className="h-1.5 w-1.5 rounded-full bg-sage animate-pulse shrink-0" /><span className="text-[10px] font-mono text-warm-muted">Vectorised ✓</span></>
+                      ) : (
+                        <><RotateCw className="h-3 w-3 text-amber-warm animate-spin shrink-0" /><span className="text-[10px] font-mono text-amber-warm">Vectorising...</span></>
+                      )}
                     </div>
                   </div>
-                  <span className={`w-fit text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${
-                    d.type === 'numeric'     ? 'bg-lavender/30 text-brand-indigo' :
-                    d.type === 'categorical' ? 'bg-amber-warm-light text-amber-warm' :
-                                              'bg-sage-light text-sage'
-                  }`}>{d.type}</span>
-                </div>
+                );
+              })}
+            </div>
+          </div>
 
-                <div className="px-3 pb-2.5 flex flex-col gap-0.5 border-b border-warm-border/30">
-                  {d.samples.map((s, si) => (
-                    <span key={si} className="text-[10.5px] font-mono text-warm-muted leading-tight">{s}</span>
-                  ))}
-                </div>
-
-                <div className="px-3 py-1.5 flex items-center gap-1.5">
-                  {d.status === 'ok' ? (
-                    <><span className="h-1.5 w-1.5 rounded-full bg-sage animate-pulse shrink-0" /><span className="text-[10px] font-mono text-warm-muted">Vectorised ✓</span></>
-                  ) : (
-                    <><RotateCw className="h-3 w-3 text-amber-warm animate-spin shrink-0" /><span className="text-[10px] font-mono text-amber-warm">Vectorising...</span></>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {/* ECR World Model Assets */}
+          <div className="bg-white border border-warm-border rounded-2xl shadow-card overflow-hidden font-sans">
+            <div className="px-4 py-3 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/25 flex items-center justify-between">
+              <span className="text-[12.5px] font-bold text-warm-text">ECR Assets</span>
+              <span className="text-[9.5px] font-mono text-brand-indigo bg-lavender/30 px-2.5 py-0.5 rounded-full font-bold">10 active</span>
+            </div>
+            <div className="p-2 flex flex-col gap-2 max-h-[300px] overflow-y-auto custom-scrollbar bg-warm-bg/5">
+              {ECR_ASSETS.map((asset) => {
+                const isExpanded = expandedEcrAsset === asset.id;
+                return (
+                  <div key={asset.id} className="flex flex-col border border-warm-border/50 rounded-xl bg-white overflow-hidden transition-all duration-200 shrink-0">
+                    <div
+                      onClick={() => setExpandedEcrAsset(isExpanded ? null : asset.id)}
+                      className="p-2 flex items-center justify-between cursor-pointer hover:bg-secondary/40 transition-colors"
+                    >
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[11px] font-bold text-warm-text truncate">{asset.name}</span>
+                        <span className="text-[9px] text-warm-muted truncate leading-none">{asset.desc}</span>
+                      </div>
+                      <span className="text-[9px] text-brand-indigo font-semibold shrink-0 select-none">
+                        {isExpanded ? 'Hide' : 'Inspect'}
+                      </span>
+                    </div>
+                    {isExpanded && (
+                      <div className="p-2.5 border-t border-warm-border/40 bg-warm-bg/10 text-[10.5px] text-warm-muted leading-relaxed font-sans">
+                        {asset.details}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Right: dynamic data table ──────────────────────────────── */}

@@ -99,6 +99,12 @@ export interface GlobalState {
   egrTarget: number;
   scenarios: Scenario[];
   optimisationResult: OptimisationResult | null;
+  selectedProvenanceMetric: string | null;
+  setSelectedProvenanceMetric: (metric: string | null) => void;
+  provenanceConversations: Record<string, Message[]>;
+  addProvenanceMessage: (metric: string, message: Message) => void;
+  workspaceMetrics: { name: string; value: string; delta: string; dir: 'up' | 'down' | 'flat' }[];
+  updateWorkspaceMetric: (name: string, value: string) => void;
   setScreen: (screen: number) => void;
   setActiveBatch: (id: string) => void;
   setModel: (model: ModelType) => void;

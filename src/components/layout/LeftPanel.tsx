@@ -13,17 +13,19 @@ export default function LeftPanel() {
 
   const handleUploadClick = () => {
     if (screen === 1) {
-      navigate('/dashboard/setup');
+      navigate('/dashboard/blueprint');
     } else if (screen === 2) {
-      navigate('/dashboard/build');
+      navigate('/dashboard/ecr-build');
     } else if (screen === 3) {
-      navigate('/dashboard/batch');
+      navigate('/dashboard/ecr-batch');
     }
   };
 
   return (
-    <aside className={`fixed lg:static top-12 left-0 z-40 w-[240px] h-[calc(100vh-48px)] bg-white lg:bg-white/40 backdrop-blur-md border-r border-warm-border/50 flex flex-col justify-between p-4 select-none isolate shrink-0 font-sans transition-transform duration-300 ease-in-out ${
-      leftSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+    <aside className={`fixed lg:relative top-12 lg:top-0 left-0 z-40 h-[calc(100vh-48px)] bg-white lg:bg-white/40 backdrop-blur-md flex flex-col justify-between select-none isolate shrink-0 font-sans transition-all duration-300 ease-in-out ${
+      leftSidebarOpen
+        ? 'w-[240px] p-4 border-r border-warm-border/50 translate-x-0 opacity-100'
+        : 'w-0 p-0 border-r-0 -translate-x-full opacity-0 overflow-hidden'
     }`}>
       <div className="flex flex-col gap-6 overflow-y-auto no-scrollbar">
         {/* Batches Navigation */}

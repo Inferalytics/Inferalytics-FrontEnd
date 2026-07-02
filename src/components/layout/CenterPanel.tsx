@@ -30,13 +30,13 @@ export default function CenterPanel() {
       )}
 
       <div className="relative z-10 p-6 min-h-full flex flex-col justify-between">
-        {screen === 1 && <TalkPanel triggerToast={triggerToast} />}
-        {(tab === 'setup' || screen === 2) && <SetupPanel />}
-        {(tab === 'build' || screen === 3) && <BuildPanel />}
-        {screen === 4 && <BatchPanel />}
-        {screen === 5 && <OptimisePanel triggerToast={triggerToast} />}
-        {(tab === 'results' || screen === 6) && <ResultsPanel />}
-        {screen === 7 && <ComparePanel triggerToast={triggerToast} />}
+        {(!tab || tab === 'conversation') && <TalkPanel triggerToast={triggerToast} />}
+        {tab === 'blueprint' && <SetupPanel />}
+        {tab === 'ecr-build' && <BuildPanel />}
+        {tab === 'ecr-batch' && <BatchPanel />}
+        {tab === 'ips-engine' && <OptimisePanel triggerToast={triggerToast} />}
+        {tab === 'workspace' && <ResultsPanel />}
+        {tab === 'learning' && <ComparePanel triggerToast={triggerToast} />}
       </div>
     </div>
   );

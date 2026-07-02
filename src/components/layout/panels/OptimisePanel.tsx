@@ -3,6 +3,7 @@ import { RotateCw, Play, Pin, ChevronDown, TrendingUp, Lock, Link2, RefreshCw } 
 import { useStore } from '../../../store/useStore';
 import { directBezier } from './bezierUtils';
 import { ModelType } from '../../../types';
+import { useNavigate } from 'react-router-dom';
 
 interface OptimisePanelProps {
   triggerToast: (msg: string) => void;
@@ -52,18 +53,58 @@ function computePath(fp: { x: number; y: number }, tp: { x: number; y: number })
 }
 
 const SOLVER_OPTIONS: { value: ModelType; label: string; desc: string }[] = [
-  { value: 'Newton-Raphson', label: 'Newton-Raphson', desc: 'Gradient-based optimizer' },
-  { value: 'Holt-Winters',   label: 'Holt-Winters',   desc: 'Exponential smoothing'   },
-  { value: 'Monte Carlo',    label: 'Monte Carlo',     desc: 'Stochastic simulation'   },
-  { value: 'auto',           label: 'Auto-select',     desc: 'Let AI choose'           },
+  { value: 'Newton-Raphson', label: 'Inference (Newton-Raphson)', desc: 'Gradient-based optimization' },
+  { value: 'Holt-Winters',   label: 'Prediction (Holt-Winters)',   desc: 'Time-series forecasting'   },
+  { value: 'Monte Carlo',    label: 'Simulation (Monte Carlo)',    desc: 'Stochastic risk simulation'   },
+  { value: 'auto',           label: 'Auto-select (Default)',        desc: 'Let AI choose method'           },
 ];
 
-const FORECAST_ROWS = [
-  { quarter: 'Q1 2025', baseline: '8.4%',  optimised: '9.1%',  delta: '+0.7pp' },
-  { quarter: 'Q2 2025', baseline: '9.2%',  optimised: '10.4%', delta: '+1.2pp' },
-  { quarter: 'Q3 2025', baseline: '10.1%', optimised: '11.8%', delta: '+1.7pp' },
-  { quarter: 'Q4 2025', baseline: '11.0%', optimised: '13.2%', delta: '+2.2pp' },
-];
+const SOLVER_FORECASTS: Record<ModelType, {
+  peakText: string;
+  accuracyText: string;
+  rows: { quarter: string; baseline: string; optimised: string; delta: string }[];
+}> = {
+  'Newton-Raphson': {
+    peakText: 'Peak EGR: 13.2% in Q4 — exceeds target by +1.2pp',
+    accuracyText: 'Newton-Raphson Solver converged in 8 iterations (epsilon < 1e-6)',
+    rows: [
+      { quarter: 'Q1 2025', baseline: '8.4%',  optimised: '9.1%',  delta: '+0.7pp' },
+      { quarter: 'Q2 2025', baseline: '9.2%',  optimised: '10.4%', delta: '+1.2pp' },
+      { quarter: 'Q3 2025', baseline: '10.1%', optimised: '11.8%', delta: '+1.7pp' },
+      { quarter: 'Q4 2025', baseline: '11.0%', optimised: '13.2%', delta: '+2.2pp' },
+    ]
+  },
+  'Holt-Winters': {
+    peakText: 'Peak EGR: 11.8% in Q4 — fails target by -0.2pp (Baseline trend)',
+    accuracyText: 'Holt-Winters prediction (alpha=0.3, beta=0.1)',
+    rows: [
+      { quarter: 'Q1 2025', baseline: '8.4%',  optimised: '8.6%',  delta: '+0.2pp' },
+      { quarter: 'Q2 2025', baseline: '9.2%',  optimised: '9.5%',  delta: '+0.3pp' },
+      { quarter: 'Q3 2025', baseline: '10.1%', optimised: '10.8%', delta: '+0.7pp' },
+      { quarter: 'Q4 2025', baseline: '11.0%', optimised: '11.8%', delta: '+0.8pp' },
+    ]
+  },
+  'Monte Carlo': {
+    peakText: 'Median EGR: 12.9% in Q4 — 74% probability of exceeding target',
+    accuracyText: 'Stochastic simulation completed 5,000 trials (95% CI: 11.4% - 14.4%)',
+    rows: [
+      { quarter: 'Q1 2025', baseline: '8.4%',  optimised: '9.0% [±0.4%]', delta: '+0.6pp' },
+      { quarter: 'Q2 2025', baseline: '9.2%',  optimised: '10.2% [±0.6%]', delta: '+1.0pp' },
+      { quarter: 'Q3 2025', baseline: '10.1%', optimised: '11.6% [±0.9%]', delta: '+1.5pp' },
+      { quarter: 'Q4 2025', baseline: '11.0%', optimised: '12.9% [±1.2%]', delta: '+1.9pp' },
+    ]
+  },
+  'auto': {
+    peakText: 'Peak EGR: 13.2% in Q4 — Solver auto-selected Newton-Raphson',
+    accuracyText: 'AI heuristics selected Gradient Descent based on linear constraints',
+    rows: [
+      { quarter: 'Q1 2025', baseline: '8.4%',  optimised: '9.1%',  delta: '+0.7pp' },
+      { quarter: 'Q2 2025', baseline: '9.2%',  optimised: '10.4%', delta: '+1.2pp' },
+      { quarter: 'Q3 2025', baseline: '10.1%', optimised: '11.8%', delta: '+1.7pp' },
+      { quarter: 'Q4 2025', baseline: '11.0%', optimised: '13.2%', delta: '+2.2pp' },
+    ]
+  }
+};
 
 const DIMENSIONS = [
   { id: 'qtr',    name: 'Quarter',      type: 'date'        as const, samples: ['Q1 2025', 'Q2 2025', 'Q3 2025']   },
@@ -77,6 +118,20 @@ const DIMENSIONS = [
 
 export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
   const { egrTarget, setEgrTarget, runOptimisation, model, setModel } = useStore();
+  const navigate = useNavigate();
+
+  const forecastData = SOLVER_FORECASTS[model] || SOLVER_FORECASTS['auto'];
+  const forecastRows = forecastData.rows;
+
+  const getCardSamples = (card: typeof DIMENSIONS[number]) => {
+    if (card.id === 'egr') {
+      if (model === 'Newton-Raphson') return ['target: 12%', 'baseline: 8.4%', 'forecast: 13.2%'];
+      if (model === 'Holt-Winters') return ['target: 12%', 'baseline: 8.4%', 'forecast: 11.8%'];
+      if (model === 'Monte Carlo') return ['target: 12%', 'baseline: 8.4%', 'median: 12.9%'];
+      return ['target: 12%', 'baseline: 8.4%', 'forecast: 13.2%'];
+    }
+    return card.samples;
+  };
 
   const [isOptimizing,    setIsOptimizing]    = useState(false);
   const [positions,       setPositions]       = useState(INITIAL_POSITIONS);
@@ -273,14 +328,20 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
           <button onClick={handleRunForecast} disabled={forecastLoading}
             className="flex items-center gap-1.5 px-3 py-1.5 border border-warm-border bg-white hover:bg-secondary rounded-xl text-[11.5px] font-semibold text-warm-text cursor-pointer transition-colors disabled:opacity-50">
             {forecastLoading ? <RotateCw className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3 text-warm-muted" />}
-            Forecast
+            Run Forecast (Prediction)
           </button>
           <button
-            onClick={() => { setIsOptimizing(true); runOptimisation(() => setIsOptimizing(false)); }}
+            onClick={() => {
+              setIsOptimizing(true);
+              runOptimisation(() => {
+                setIsOptimizing(false);
+                navigate('/dashboard/workspace/summary');
+              });
+            }}
             disabled={isOptimizing}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-indigo hover:bg-brand-indigo/90 disabled:opacity-50 text-white rounded-xl text-[11.5px] font-bold shadow-sm transition-colors cursor-pointer">
             {isOptimizing ? <RotateCw className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3 fill-current" />}
-            Optimise
+            Run Optimisation (Inference)
           </button>
         </div>
       </div>
@@ -291,8 +352,8 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
           <div className="px-4 py-2.5 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/25 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <TrendingUp className="h-3.5 w-3.5 text-brand-indigo" />
-              <span className="text-[12px] font-bold text-warm-text">EGR Forecast — {currentSolver.label}</span>
-              <span className="text-[9.5px] font-mono text-warm-muted bg-secondary px-2 py-0.5 rounded-full">target: {egrTarget}% · churn ≤ {churnLimit}%</span>
+              <span className="text-[12px] font-bold text-warm-text">IPS Trajectory Projection — {currentSolver.label}</span>
+              <span className="text-[9.5px] font-mono text-warm-muted bg-secondary px-2 py-0.5 rounded-full">{forecastData.accuracyText}</span>
             </div>
             <button onClick={() => setForecastOpen(false)} className="text-warm-muted hover:text-warm-text cursor-pointer text-[12px]">✕</button>
           </div>
@@ -300,13 +361,13 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
             <thead>
               <tr className="bg-warm-bg/60 border-b border-warm-border text-[10px] font-bold text-warm-muted uppercase tracking-wide font-sans">
                 <th className="p-2.5 pl-4">Quarter</th>
-                <th className="p-2.5">Baseline EGR</th>
-                <th className="p-2.5">Optimised EGR</th>
+                <th className="p-2.5">Baseline Forecast</th>
+                <th className="p-2.5">Optimised Inference</th>
                 <th className="p-2.5 pr-4">Δ Uplift</th>
               </tr>
             </thead>
             <tbody>
-              {FORECAST_ROWS.map((row, i) => (
+              {forecastRows.map((row, i) => (
                 <tr key={i} className="border-b border-warm-border/30 hover:bg-warm-bg/15 transition-colors">
                   <td className="p-2.5 pl-4 font-mono font-semibold text-warm-text">{row.quarter}</td>
                   <td className="p-2.5 font-mono text-warm-muted">{row.baseline}</td>
@@ -317,10 +378,16 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
             </tbody>
           </table>
           <div className="px-4 py-2 bg-sage-light/40 border-t border-sage-border/40 text-[10.5px] font-sans flex items-center justify-between">
-            <span className="text-warm-muted">Peak EGR: <strong className="text-sage">13.2%</strong> in Q4 — exceeds target by +1.2pp</span>
+            <span className="text-warm-muted">{forecastData.peakText}</span>
             <span className="text-brand-indigo font-semibold hover:underline cursor-pointer"
-              onClick={() => { setIsOptimizing(true); runOptimisation(() => setIsOptimizing(false)); }}>
-              Lock & run full optimisation →
+              onClick={() => {
+                setIsOptimizing(true);
+                runOptimisation(() => {
+                  setIsOptimizing(false);
+                  navigate('/dashboard/workspace/summary');
+                });
+              }}>
+              Lock & run full IPS inference →
             </span>
           </div>
         </div>
@@ -486,7 +553,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
               </div>
 
               <div className="px-3 pb-3 flex flex-col gap-0.5 border-b border-warm-border/30">
-                {d.samples.map((s, si) => (
+                {getCardSamples(d).map((s, si) => (
                   <span key={si} className="text-[11px] font-mono text-warm-muted leading-tight truncate">{s}</span>
                 ))}
               </div>

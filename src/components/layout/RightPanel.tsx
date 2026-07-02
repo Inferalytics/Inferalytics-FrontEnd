@@ -2,11 +2,27 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
 import { Sparkles, Send, RefreshCw } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
+import ProvenanceInspector from './ProvenanceInspector';
+
+const renderFormattedText = (content: string) => {
+  if (!content) return '';
+  const parts = content.split('**');
+  return parts.map((part, index) => {
+    if (index % 2 === 1) {
+      return <strong key={index} className="font-bold text-warm-text">{part}</strong>;
+    }
+    return part;
+  });
+};
 
 export default function RightPanel() {
   const {
     conversation,
-    addMessage
+    addMessage,
+    selectedProvenanceMetric,
+    runOptimisation,
+    runScenarioB,
+    screen
   } = useStore();
 
   const { tab } = useParams<{ tab: string }>();
@@ -14,6 +30,14 @@ export default function RightPanel() {
   const [inputVal, setInputVal] = useState('');
   const [isOptimizing, setIsOptimizing] = useState(false);
   const threadEndRef = useRef<HTMLDivElement>(null);
+
+  const isBannerActionDone = (actionType: string) => {
+    if (actionType === 'upload-data') return screen > 2;
+    if (actionType === 'build-world-model') return screen > 3;
+    if (actionType === 'run-optimisation') return screen > 5;
+    if (actionType === 'run-scenario-b') return screen > 6;
+    return false;
+  };
 
   // Auto scroll to bottom of the conversation thread
   useEffect(() => {
@@ -35,31 +59,39 @@ export default function RightPanel() {
 
   const handleBannerAction = (actionType: string) => {
     if (actionType === 'upload-data') {
-      navigate('/dashboard/setup');
+      navigate('/dashboard/blueprint/general');
     } else if (actionType === 'build-world-model') {
-      navigate('/dashboard/batch');
+      navigate('/dashboard/ecr-build/dimensions');
     } else if (actionType === 'run-optimisation') {
       setIsOptimizing(true);
-      // Simulate 1.2s Newton-Raphson optimization calculation delay
-      setTimeout(() => {
+      runOptimisation(() => {
         setIsOptimizing(false);
-        navigate('/dashboard/results');
-      }, 1200);
+        navigate('/dashboard/workspace/summary');
+      });
     } else if (actionType === 'run-scenario-b') {
       setIsOptimizing(true);
-      // Simulate 1.2s scenario projection delay
-      setTimeout(() => {
+      runScenarioB(() => {
         setIsOptimizing(false);
-        navigate('/dashboard/compare');
-      }, 1200);
+        navigate('/dashboard/learning');
+      });
     }
   };
 
   const { rightSidebarOpen } = useStore();
   const isThinking = conversation.some((m) => m.isTyping) || isOptimizing;
 
+  if (selectedProvenanceMetric !== null) {
+    return (
+      <aside className={`fixed lg:static top-12 right-0 z-40 w-[360px] sm:w-[400px] md:w-[420px] xl:w-[450px] max-w-[85vw] h-[calc(100vh-48px)] bg-white lg:bg-white/40 backdrop-blur-md border-l border-warm-border/50 flex flex-col justify-between isolate shrink-0 font-sans transition-transform duration-300 ease-in-out ${
+        rightSidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
+      }`}>
+        <ProvenanceInspector />
+      </aside>
+    );
+  }
+
   return (
-    <aside className={`fixed lg:static top-12 right-0 z-40 w-[320px] sm:w-[360px] max-w-[85vw] h-[calc(100vh-48px)] bg-white lg:bg-white/40 backdrop-blur-md border-l border-warm-border/50 flex flex-col justify-between isolate shrink-0 font-sans transition-transform duration-300 ease-in-out ${
+    <aside className={`fixed lg:static top-12 right-0 z-40 w-[360px] sm:w-[400px] md:w-[420px] xl:w-[450px] max-w-[85vw] h-[calc(100vh-48px)] bg-white lg:bg-white/40 backdrop-blur-md border-l border-warm-border/50 flex flex-col justify-between isolate shrink-0 font-sans transition-transform duration-300 ease-in-out ${
       rightSidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
     }`}>
       {/* 48px Header */}
@@ -106,7 +138,7 @@ export default function RightPanel() {
                   }`}
                   style={{ whiteSpace: 'pre-wrap' }}
                 >
-                  {msg.content}
+                  {renderFormattedText(msg.content)}
 
                   {/* Suggestion Chips */}
                   {isAI && msg.chips && msg.chips.length > 0 && (
@@ -124,23 +156,32 @@ export default function RightPanel() {
                   )}
 
                   {/* Action Confirmation Banner */}
-                  {isAI && msg.banner && (
-                    <div className="mt-3 p-3 bg-sage-light border border-sage-border rounded-xl flex flex-col gap-2.5 shadow-sm">
-                      <span className="text-[11.5px] font-semibold text-sage-light-foreground text-warm-text">
-                        {msg.banner.label}
-                      </span>
-                      <button
-                        onClick={() => handleBannerAction(msg.banner!.actionType)}
-                        disabled={isThinking}
-                        className="w-full py-1.5 rounded-lg bg-sage hover:bg-sage/90 text-white text-[12px] font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer disabled:opacity-50"
-                      >
-                        {isOptimizing ? (
-                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                        ) : null}
-                        {msg.banner.buttonText}
-                      </button>
-                    </div>
-                  )}
+                  {isAI && msg.banner && (() => {
+                    const isDone = isBannerActionDone(msg.banner.actionType);
+                    return (
+                      <div className={`mt-3 p-3 border rounded-xl flex flex-col gap-2.5 shadow-sm transition-all ${
+                        isDone ? 'bg-secondary/40 border-warm-border/60 opacity-75' : 'bg-sage-light border-sage-border'
+                      }`}>
+                        <span className="text-[11.5px] font-semibold text-warm-text">
+                          {msg.banner.label}
+                        </span>
+                        <button
+                          onClick={() => handleBannerAction(msg.banner!.actionType)}
+                          disabled={isThinking || isDone}
+                          className={`w-full py-1.5 rounded-lg text-[12px] font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-all ${
+                            isDone 
+                              ? 'bg-warm-bg border border-warm-border text-warm-muted cursor-not-allowed'
+                              : 'bg-sage hover:bg-sage/90 text-white cursor-pointer'
+                          }`}
+                        >
+                          {isThinking && !isDone ? (
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          ) : null}
+                          {isDone ? `✓ ${msg.banner.buttonText.replace(' →', '')} Executed` : msg.banner.buttonText}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -158,7 +199,7 @@ export default function RightPanel() {
             onKeyDown={handleKeyDown}
             disabled={isThinking}
             placeholder={
-              tab === 'talk'
+              tab === 'conversation'
                 ? 'Reply, or keep refining the problem...'
                 : 'Ask or instruct the AI...'
             }

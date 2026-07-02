@@ -17,6 +17,19 @@ const CARD_H     = 132;
 const GAP        = 28;
 const TOP_OFFSET = 12;
 
+const ECR_ASSETS = [
+  { id: 'ontology', name: 'Decision Ontology', desc: 'Ontological tags & vocabulary', details: 'Core entity definitions: Quarter (temporal dimension), Revenue (financial outcome target), Region (geographic dimension), and Product Line (segmentation factor). Mapped to enterprise schema.' },
+  { id: 'network', name: 'Relationship Network', desc: 'Active node connectivity map', details: 'Defined links: Quarter ➔ Revenue (time series), Region ↔ Revenue (geographic correlation), Product Line ➔ Cost Centre (allocation rule), Cost Centre ↔ Gross Margin (derived ratio).' },
+  { id: 'rules', name: 'Business Rules', desc: 'System constraints & bounds', details: 'Hard Constraints: Customer renewal churn must remain ≤ 6.0% post price adjustments. Soft Constraints: Cost centre budget variance must not exceed ±10%.' },
+  { id: 'model', name: 'Data Model', desc: 'Underlying spreadsheet files', details: 'Spreadsheets linked: q2_revenue_raw.xlsx (18 fields, 4,210 rows), cost_centre_2024.csv (9 fields, 1,802 rows), and region_mapping.json (6 fields, 142 rows).' },
+  { id: 'history', name: 'Decision History', desc: 'Past strategic outcomes', details: 'Reference cohort: 5% uniform price increase executed 18 months ago. Results: 3.8% peak churn, +4.2% net ARR change. Used as model priors.' },
+  { id: 'sim_history', name: 'Simulation History', desc: 'Active scenarios configurations', details: 'Configured projections: Scenario A (Baseline 8% YoY revenue growth), Scenario B (Optimised Newton-Raphson 18% uplift + 6% Cost Centre reduction).' },
+  { id: 'expert', name: 'Expert Knowledge', desc: 'Human-anchored constraints', details: 'Static anchors: Region multipliers and Gross Margin ratios pinned to static Q3 parameters based on CFO directives.' },
+  { id: 'confidence', name: 'Confidence Scores', desc: 'AI confidence ratings', details: 'Confidence indices: Ontology parsing (98%), Relationship correlation (92%), Churn predictive fit (94%). Composite ECR confidence score: 94.6%.' },
+  { id: 'behavior', name: 'Learned Behaviors', desc: 'Elasticities & agent curves', details: 'Segment parameters: Calculated Enterprise price elasticity coefficient of -1.45. Churn curve escalates exponentially when price change exceeds 10%.' },
+  { id: 'causal', name: 'Causal Relationships', desc: 'Optimisation impact paths', details: 'Causality stream: Strategic Price uplift % ➔ Segment Renewal Churn ➔ Operating Margin expansion ➔ Net EGR Achieved.' }
+];
+
 const INITIAL_POS = DIMENSIONS.map((_, i) => ({
   x: 0,
   y: TOP_OFFSET + i * (CARD_H + GAP),
@@ -33,6 +46,7 @@ export default function BuildPanel() {
   const [lines,      setLines]        = useState<Line[]>([]);
   const [drag, setDrag] = useState<{ idx: number; ox: number; oy: number } | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [expandedEcrAsset, setExpandedEcrAsset] = useState<string | null>(null);
 
   const canvasRef   = useRef<HTMLDivElement>(null);
   const rightColRef = useRef<HTMLDivElement>(null);
@@ -273,6 +287,40 @@ export default function BuildPanel() {
             </div>
           </div>
 
+          {/* ECR World Model Assets */}
+          <div className="bg-white border border-warm-border rounded-2xl shadow-card overflow-hidden font-sans">
+            <div className="px-4 py-3 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/25 flex items-center justify-between">
+              <span className="text-[12.5px] font-bold text-warm-text">ECR World Model Assets</span>
+              <span className="text-[9.5px] font-mono text-brand-indigo bg-lavender/30 px-2.5 py-0.5 rounded-full font-bold">10 active layers</span>
+            </div>
+            <div className="p-3 flex flex-col gap-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+              {ECR_ASSETS.map((asset) => {
+                const isExpanded = expandedEcrAsset === asset.id;
+                return (
+                  <div key={asset.id} className="flex flex-col border border-warm-border/50 rounded-xl bg-warm-bg/20 overflow-hidden transition-all duration-200 shrink-0">
+                    <div
+                      onClick={() => setExpandedEcrAsset(isExpanded ? null : asset.id)}
+                      className="p-2.5 flex items-center justify-between cursor-pointer hover:bg-white transition-colors"
+                    >
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[11.5px] font-bold text-warm-text">{asset.name}</span>
+                        <span className="text-[9.5px] text-warm-muted truncate">{asset.desc}</span>
+                      </div>
+                      <span className="text-[10px] text-brand-indigo font-semibold hover:underline select-none">
+                        {isExpanded ? 'Collapse' : 'Inspect'}
+                      </span>
+                    </div>
+                    {isExpanded && (
+                      <div className="p-3 border-t border-warm-border/40 bg-white text-[11px] text-warm-muted leading-relaxed font-sans animate-float-up">
+                        {asset.details}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Drafted Relationships */}
           <div className="bg-white border border-warm-border rounded-2xl shadow-card overflow-hidden font-sans">
             <div className="px-4 py-3 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/25 flex items-center justify-between">
@@ -306,7 +354,7 @@ export default function BuildPanel() {
             </div>
             <div className="px-3 pb-3">
               <button
-                onClick={() => navigate('/dashboard/batch')}
+                onClick={() => navigate('/dashboard/ecr-batch')}
                 className="w-full py-2 bg-brand-indigo hover:opacity-90 text-white rounded-xl text-[12px] font-bold shadow-sm transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 Construct Optimization Matrix <ArrowRight className="h-3.5 w-3.5" />

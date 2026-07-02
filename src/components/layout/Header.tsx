@@ -28,19 +28,19 @@ export default function Header() {
   const activeBatch = batches.find(b => b.id === activeBatchId) || batches[0];
   
   let activeStep = 0;
-  if (tab === 'setup') activeStep = 1;
-  else if (tab === 'build' || tab === 'batch') activeStep = 2;
-  else if (tab === 'optimise' || tab === 'results' || tab === 'compare') activeStep = 3;
+  if (tab === 'blueprint') activeStep = 1;
+  else if (tab === 'ecr-build' || tab === 'ecr-batch') activeStep = 2;
+  else if (tab === 'ips-engine' || tab === 'workspace' || tab === 'learning') activeStep = 3;
 
   // Screen segmented navbar items mapped directly to browser slugs
   const screensList = [
-    { path: 'talk', label: '01 Talk' },
-    { path: 'setup', label: '02 Setup' },
-    { path: 'build', label: '03 Build' },
-    { path: 'batch', label: '04 Batch' },
-    { path: 'optimise', label: '05 Optimise' },
-    { path: 'results', label: '06 Results' },
-    { path: 'compare', label: '07 Compare' }
+    { path: 'conversation', label: '01 Conversation' },
+    { path: 'blueprint',    label: '02 Blueprint' },
+    { path: 'ecr-build',    label: '03 ECR Build' },
+    { path: 'ecr-batch',    label: '04 ECR Batch' },
+    { path: 'ips-engine',   label: '05 IPS Engine' },
+    { path: 'workspace',    label: '06 Workspace' },
+    { path: 'learning',     label: '07 Learning' }
   ];
 
   const modelOptions: { value: ModelType; label: string }[] = [
@@ -54,7 +54,7 @@ export default function Header() {
     <header className="h-12 w-full bg-transparent px-4 flex items-center justify-between z-50 relative select-none shrink-0 font-sans">
       {/* Left: Wordmark & Batch Switcher & Model Selector */}
       <div className="flex items-center gap-6">
-        <div className="flex items-center cursor-pointer" onClick={() => navigate('/dashboard/talk')}>
+        <div className="flex items-center cursor-pointer" onClick={() => navigate('/dashboard/conversation')}>
           <img
             src="/logo-side.png"
             alt="Inferalytics"
@@ -62,18 +62,18 @@ export default function Header() {
           />
         </div>
 
-        {/* Mobile Left Sidebar Toggle */}
-        {tab !== 'talk' && (
+        {/* Left Sidebar Toggle */}
+        {tab !== 'conversation' && (
           <button
             onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
-            className="lg:hidden p-1 rounded-lg bg-secondary hover:bg-muted text-warm-text border border-warm-border/50 cursor-pointer flex items-center justify-center shrink-0"
+            className="p-1 rounded-lg bg-secondary hover:bg-muted text-warm-text border border-warm-border/50 cursor-pointer flex items-center justify-center shrink-0 transition-colors"
             title="Toggle sidebar navigator"
           >
             <Menu className="h-4 w-4" />
           </button>
         )}
 
-        {tab !== 'talk' && (
+        {tab !== 'conversation' && (
           <div className="hidden lg:flex items-center gap-3">
             {/* Batch Switcher */}
             <div className="relative">
@@ -179,7 +179,7 @@ export default function Header() {
         <div className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-1.5 bg-white/70 backdrop-blur-md px-3.5 py-1 border border-warm-border rounded-full shadow-sm">
           {/* Step 1: Define */}
           <button
-            onClick={() => navigate('/dashboard/setup/general')}
+            onClick={() => navigate('/dashboard/blueprint/general')}
             className="flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer focus:outline-none"
           >
             <span className={`h-5 w-5 rounded-full text-[10px] font-bold flex items-center justify-center shadow-sm transition-colors ${
@@ -202,7 +202,7 @@ export default function Header() {
 
           {/* Step 2: Construct */}
           <button
-            onClick={() => navigate('/dashboard/build/dimensions')}
+            onClick={() => navigate('/dashboard/ecr-build/dimensions')}
             className="flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer focus:outline-none"
           >
             <span className={`h-5 w-5 rounded-full text-[10px] font-bold flex items-center justify-center shadow-sm transition-colors ${
@@ -223,9 +223,9 @@ export default function Header() {
 
           <span className="h-px w-6 bg-warm-border" />
 
-          {/* Step 3: Optimise */}
+          {/* Step 3: IPS Engine */}
           <button
-            onClick={() => navigate('/dashboard/optimise')}
+            onClick={() => navigate('/dashboard/ips-engine')}
             className="flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer focus:outline-none"
           >
             <span className={`h-5 w-5 rounded-full text-[10px] font-bold flex items-center justify-center shadow-sm transition-colors ${
@@ -238,7 +238,7 @@ export default function Header() {
             <span className={`text-[11.5px] font-bold transition-colors ${
               activeStep === 3 ? 'text-brand-indigo font-semibold' : 'text-warm-muted font-medium'
             }`}>
-              Optimise
+              IPS Engine
             </span>
           </button>
         </div>
@@ -247,7 +247,7 @@ export default function Header() {
       {/* Right: Screen Navigation & Avatar */}
       <div className="flex items-center gap-2 sm:gap-3">
         {/* Mobile Right Sidebar Toggle */}
-        {tab !== 'talk' && (
+        {tab !== 'conversation' && (
           <button
             onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
             className="lg:hidden p-1 rounded-lg bg-secondary hover:bg-muted text-warm-text border border-warm-border/50 cursor-pointer flex items-center justify-center shrink-0"
@@ -258,7 +258,7 @@ export default function Header() {
         )}
 
         {/* Segmented Control */}
-        {tab !== 'talk' && (
+        {tab !== 'conversation' && (
           <div className="flex items-center gap-0.5 bg-secondary/80 p-0.5 rounded-full border border-warm-border/40 overflow-x-auto max-w-[140px] sm:max-w-[240px] md:max-w-[360px] lg:max-w-none no-scrollbar whitespace-nowrap">
             {screensList.map(s => (
               <button

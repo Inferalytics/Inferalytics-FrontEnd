@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ClerkProvider, useAuth } from '@clerk/clerk-react';
 import SignInPage from './pages/SignInPage';
 import SignUpPage from './pages/SignUpPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import DashboardPage from './pages/DashboardPage';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || 'pk_test_bW9jay1jbGVyay1rZXktMTAwLmNsZXJrLmFjY291bnRzLmRldiQ';
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/"        element={<GuestRoute><SignInPage /></GuestRoute>} />
           <Route path="/sign-in" element={<GuestRoute><SignInPage /></GuestRoute>} />
           <Route path="/sign-up" element={<GuestRoute><SignUpPage /></GuestRoute>} />
+          <Route path="/forgot-password" element={<GuestRoute><ForgotPasswordPage /></GuestRoute>} />
 
           {/* Redirect bare /dashboard to conversation tab */}
           <Route path="/dashboard" element={<Navigate to="/dashboard/conversation" replace />} />

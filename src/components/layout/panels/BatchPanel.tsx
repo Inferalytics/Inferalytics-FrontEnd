@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { RotateCw, Check, Table2, Sparkles, ArrowRight } from 'lucide-react';
+import { RotateCw, Check, Table2, Sparkles, ArrowRight, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useStore } from '../../../store/useStore';
 
 // ── Static dimension cards ──────────────────────────────────────────────────
 const BATCH_CARDS = [
@@ -13,21 +14,8 @@ const BATCH_CARDS = [
 
 type CardId = typeof BATCH_CARDS[number]['id'];
 
-const ECR_ASSETS = [
-  { id: 'ontology', name: 'Decision Ontology', desc: 'Ontological tags & vocabulary', details: 'Core entity definitions: Quarter (temporal dimension), Revenue (financial outcome target), Region (geographic dimension), and Product Line (segmentation factor). Mapped to enterprise schema.' },
-  { id: 'network', name: 'Relationship Network', desc: 'Active node connectivity map', details: 'Defined links: Quarter ➔ Revenue (time series), Region ↔ Revenue (geographic correlation), Product Line ➔ Cost Centre (allocation rule), Cost Centre ↔ Gross Margin (derived ratio).' },
-  { id: 'rules', name: 'Business Rules', desc: 'System constraints & bounds', details: 'Hard Constraints: Customer renewal churn must remain ≤ 6.0% post price adjustments. Soft Constraints: Cost centre budget variance must not exceed ±10%.' },
-  { id: 'model', name: 'Data Model', desc: 'Underlying spreadsheet files', details: 'Spreadsheets linked: q2_revenue_raw.xlsx (18 fields, 4,210 rows), cost_centre_2024.csv (9 fields, 1,802 rows), and region_mapping.json (6 fields, 142 rows).' },
-  { id: 'history', name: 'Decision History', desc: 'Past strategic outcomes', details: 'Reference cohort: 5% uniform price increase executed 18 months ago. Results: 3.8% peak churn, +4.2% net ARR change. Used as model priors.' },
-  { id: 'sim_history', name: 'Simulation History', desc: 'Active scenarios configurations', details: 'Configured projections: Scenario A (Baseline 8% YoY revenue growth), Scenario B (Optimised Newton-Raphson 18% uplift + 6% Cost Centre reduction).' },
-  { id: 'expert', name: 'Expert Knowledge', desc: 'Human-anchored constraints', details: 'Static anchors: Region multipliers and Gross Margin ratios pinned to static Q3 parameters based on CFO directives.' },
-  { id: 'confidence', name: 'Confidence Scores', desc: 'AI confidence ratings', details: 'Confidence indices: Ontology parsing (98%), Relationship correlation (92%), Churn predictive fit (94%). Composite ECR confidence score: 94.6%.' },
-  { id: 'behavior', name: 'Learned Behaviors', desc: 'Elasticities & agent curves', details: 'Segment parameters: Calculated Enterprise price elasticity coefficient of -1.45. Churn curve escalates exponentially when price change exceeds 10%.' },
-  { id: 'causal', name: 'Causal Relationships', desc: 'Optimisation impact paths', details: 'Causality stream: Strategic Price uplift % ➔ Segment Renewal Churn ➔ Operating Margin expansion ➔ Net EGR Achieved.' }
-];
-
 // ── Mock data keyed by dimension id ─────────────────────────────────────────
-const MOCK_DATA: Record<CardId, { columns: string[]; rows: string[][] }> = {
+const MOCK_DATA: Record<string, { columns: string[]; rows: string[][] }> = {
   rev: {
     columns: ['Customer ID', 'ARR', 'Tier', 'Quarter', 'Region'],
     rows: [
@@ -78,7 +66,7 @@ const MOCK_DATA: Record<CardId, { columns: string[]; rows: string[][] }> = {
 };
 
 // ── Merged columns when multiple cards selected ──────────────────────────────
-function getMergedTable(ids: CardId[]) {
+function getMergedTable(ids: string[]) {
   if (ids.length === 0) return { columns: [], rows: [] };
   if (ids.length === 1) return MOCK_DATA[ids[0]];
 
@@ -99,19 +87,13 @@ function getMergedTable(ids: CardId[]) {
 // ── Component ────────────────────────────────────────────────────────────────
 export default function BatchPanel() {
   const navigate = useNavigate();
-  const [selected, setSelected] = useState<Set<CardId>>(new Set(['rev']));
-  const [expandedEcrAsset, setExpandedEcrAsset] = useState<string | null>(null);
+  const { dimensions } = useStore();
 
-  const toggle = (id: CardId) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) { next.delete(id); } else { next.add(id); }
-      return next;
-    });
-  };
-
-  const selectedIds  = BATCH_CARDS.filter(c => selected.has(c.id)).map(c => c.id);
-  const { columns, rows } = getMergedTable(selectedIds);
+  const selectedIds = dimensions.filter(d => d.selected).map(d => d.id);
+  // Default to showing some data (e.g. Revenue) if nothing is selected
+  const displayIds = selectedIds.length > 0 ? selectedIds : ['rev'];
+  
+  const { columns, rows } = getMergedTable(displayIds);
 
   const exportCSV = () => {
     if (columns.length === 0) return;
@@ -121,7 +103,7 @@ export default function BatchPanel() {
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `inferalytics_${selectedIds.join('_')}.csv`;
+    a.download = `inferalytics_${displayIds.join('_')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -136,9 +118,6 @@ export default function BatchPanel() {
             <Table2 className="h-3.5 w-3.5 text-brand-indigo" />
           </div>
           <span className="text-[13px] font-bold text-warm-text">Batch Dimension Explorer</span>
-          <span className="text-[10px] font-mono text-warm-muted bg-white/70 border border-warm-border px-2 py-0.5 rounded-full">
-            {selected.size} selected · {rows.length} rows
-          </span>
         </div>
         <button
           onClick={() => navigate('/dashboard/ips-engine')}
@@ -150,180 +129,73 @@ export default function BatchPanel() {
 
       {/* ── Main split ─────────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row gap-5 w-full">
-
-        {/* Left sidebar stack: Dimensions + ECR World Model Assets */}
-        <div className="flex flex-col gap-4 shrink-0 w-full md:w-[220px]">
-          {/* Dimensions selectable list */}
-          <div className="flex flex-col gap-3">
-            <span className="text-[9.5px] font-bold text-warm-muted uppercase tracking-widest pl-0.5">
-              Dimensions ({BATCH_CARDS.length})
-            </span>
-            <div className="flex flex-row md:flex-col gap-3 overflow-x-auto md:overflow-x-visible pb-2 md:pb-0 no-scrollbar items-stretch">
-              {BATCH_CARDS.map((d) => {
-                const isSelected = selected.has(d.id);
-                return (
-                  <div
-                    key={d.id}
-                    onClick={() => toggle(d.id)}
-                    className={`w-full min-w-[200px] md:min-w-0 bg-white border rounded-2xl shadow-sm overflow-hidden flex flex-col cursor-pointer transition-all duration-150 shrink-0 ${
-                      isSelected
-                        ? 'border-brand-indigo ring-2 ring-brand-indigo/20 shadow-md'
-                        : 'border-warm-border hover:border-warm-text/20 hover:shadow-md'
-                    }`}
-                  >
-                    <div className="p-3 pb-2 flex flex-col gap-1 font-sans">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[12px] font-bold text-warm-text">{d.name}</span>
-                        <div className={`h-4 w-4 rounded-full border flex items-center justify-center transition-all ${
-                          isSelected
-                            ? 'bg-brand-indigo border-brand-indigo'
-                            : 'border-warm-border bg-white'
-                        }`}>
-                          {isSelected && <Check className="h-2.5 w-2.5 text-white" />}
-                        </div>
-                      </div>
-                      <span className={`w-fit text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${
-                        d.type === 'numeric'     ? 'bg-lavender/30 text-brand-indigo' :
-                        d.type === 'categorical' ? 'bg-amber-warm-light text-amber-warm' :
-                                                  'bg-sage-light text-sage'
-                      }`}>{d.type}</span>
-                    </div>
-
-                    <div className="px-3 pb-2.5 flex flex-col gap-0.5 border-b border-warm-border/30">
-                      {d.samples.map((s, si) => (
-                        <span key={si} className="text-[10.5px] font-mono text-warm-muted leading-tight">{s}</span>
-                      ))}
-                    </div>
-
-                    <div className="px-3 py-1.5 flex items-center gap-1.5">
-                      {d.status === 'ok' ? (
-                        <><span className="h-1.5 w-1.5 rounded-full bg-sage animate-pulse shrink-0" /><span className="text-[10px] font-mono text-warm-muted">Vectorised ✓</span></>
-                      ) : (
-                        <><RotateCw className="h-3 w-3 text-amber-warm animate-spin shrink-0" /><span className="text-[10px] font-mono text-amber-warm">Vectorising...</span></>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ECR World Model Assets */}
-          <div className="bg-white border border-warm-border rounded-2xl shadow-card overflow-hidden font-sans">
-            <div className="px-4 py-3 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/25 flex items-center justify-between">
-              <span className="text-[12.5px] font-bold text-warm-text">ECR Assets</span>
-              <span className="text-[9.5px] font-mono text-brand-indigo bg-lavender/30 px-2.5 py-0.5 rounded-full font-bold">10 active</span>
-            </div>
-            <div className="p-2 flex flex-col gap-2 max-h-[300px] overflow-y-auto custom-scrollbar bg-warm-bg/5">
-              {ECR_ASSETS.map((asset) => {
-                const isExpanded = expandedEcrAsset === asset.id;
-                return (
-                  <div key={asset.id} className="flex flex-col border border-warm-border/50 rounded-xl bg-white overflow-hidden transition-all duration-200 shrink-0">
-                    <div
-                      onClick={() => setExpandedEcrAsset(isExpanded ? null : asset.id)}
-                      className="p-2 flex items-center justify-between cursor-pointer hover:bg-secondary/40 transition-colors"
-                    >
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-[11px] font-bold text-warm-text truncate">{asset.name}</span>
-                        <span className="text-[9px] text-warm-muted truncate leading-none">{asset.desc}</span>
-                      </div>
-                      <span className="text-[9px] text-brand-indigo font-semibold shrink-0 select-none">
-                        {isExpanded ? 'Hide' : 'Inspect'}
-                      </span>
-                    </div>
-                    {isExpanded && (
-                      <div className="p-2.5 border-t border-warm-border/40 bg-warm-bg/10 text-[10.5px] text-warm-muted leading-relaxed font-sans">
-                        {asset.details}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Right: dynamic data table ──────────────────────────────── */}
-        <div className="flex-1 min-w-0 flex flex-col gap-3">
+        {/* Full width data preview ──────────────────────────────── */}
+        <div className="flex-1 min-w-0 flex flex-col gap-4">
           <span className="text-[9.5px] font-bold text-warm-muted uppercase tracking-widest pl-0.5">
             Data Preview
           </span>
 
-          {selected.size === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center bg-white/60 border border-warm-border/60 rounded-2xl min-h-[320px] gap-3">
-              <div className="h-10 w-10 rounded-2xl bg-secondary flex items-center justify-center">
-                <Table2 className="h-5 w-5 text-warm-muted" />
-              </div>
-              <span className="text-[12px] text-warm-muted font-medium">Select at least one dimension to preview data</span>
-            </div>
-          ) : (
-            <div className="bg-white border border-warm-border rounded-2xl shadow-card overflow-hidden flex flex-col">
-              {/* Table header */}
-              <div className="px-4 py-2.5 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/25 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-3.5 w-3.5 text-brand-indigo" />
-                  <span className="text-[11.5px] font-bold text-warm-text">
-                    {selectedIds.map(id => BATCH_CARDS.find(c => c.id === id)?.name).join(' + ')}
-                  </span>
-                </div>
-                <span className="text-[9.5px] font-mono text-warm-muted">
-                  {rows.length} rows · {columns.length} columns · mock data
+          <div className="flex-1 bg-white border border-warm-border rounded-2xl shadow-card overflow-hidden flex flex-col min-h-[320px]">
+            {/* Table header */}
+            <div className="px-4 py-2.5 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/25 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-3.5 w-3.5 text-brand-indigo" />
+                <span className="text-[11.5px] font-bold text-warm-text">
+                  {displayIds.map(id => BATCH_CARDS.find(c => c.id === id)?.name || id).join(' + ')}
                 </span>
               </div>
+              <span className="text-[9.5px] font-mono text-warm-muted">
+                {rows.length} rows · {columns.length} columns · mock data
+              </span>
+            </div>
 
-              {/* Scrollable table */}
-              <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] custom-scrollbar">
-                <table className="w-full text-left border-collapse text-[11.5px]">
-                  <thead className="sticky top-0 z-10">
-                    <tr className="bg-warm-bg/80 backdrop-blur-sm border-b border-warm-border">
-                      <th className="p-2.5 pl-4 w-8 text-warm-muted font-sans font-bold text-[10px]">#</th>
-                      {columns.map((col, ci) => (
-                        <th key={ci} className="p-2.5 pr-4 font-sans font-bold text-warm-muted text-[10px] uppercase tracking-wide whitespace-nowrap">
-                          {col}
-                        </th>
+            {/* Scrollable table */}
+            <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-240px)] custom-scrollbar">
+              <table className="w-full text-left border-collapse text-[11.5px]">
+                <thead className="sticky top-0 z-10">
+                  <tr className="bg-warm-bg/80 backdrop-blur-sm border-b border-warm-border">
+                    <th className="p-2.5 pl-4 w-8 text-warm-muted font-sans font-bold text-[10px]">#</th>
+                    {columns.map((col, ci) => (
+                      <th key={ci} className="p-2.5 pr-4 font-sans font-bold text-warm-muted text-[10px] uppercase tracking-wide whitespace-nowrap">
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, ri) => (
+                    <tr
+                      key={ri}
+                      className="border-b border-warm-border/30 hover:bg-warm-bg/20 transition-colors group"
+                    >
+                      <td className="p-2.5 pl-4 font-mono text-[10px] text-warm-muted/50 group-hover:text-warm-muted">{ri + 1}</td>
+                      {row.map((cell, ci) => (
+                        <td key={ci} className={`p-2.5 pr-4 font-mono text-[11.5px] whitespace-nowrap ${
+                          ci === 0 ? 'font-semibold text-warm-text' : 'text-warm-muted'
+                        } ${
+                          typeof cell === 'string' && cell.startsWith('+') ? 'text-sage font-semibold' :
+                          typeof cell === 'string' && cell.startsWith('−') ? 'text-destructive font-semibold' : ''
+                        }`}>
+                          {cell}
+                        </td>
                       ))}
                     </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row, ri) => (
-                      <tr
-                        key={ri}
-                        className="border-b border-warm-border/30 hover:bg-warm-bg/20 transition-colors group"
-                      >
-                        <td className="p-2.5 pl-4 font-mono text-[10px] text-warm-muted/50 group-hover:text-warm-muted">{ri + 1}</td>
-                        {row.map((cell, ci) => (
-                          <td key={ci} className={`p-2.5 pr-4 font-mono text-[11.5px] whitespace-nowrap ${
-                            ci === 0 ? 'font-semibold text-warm-text' : 'text-warm-muted'
-                          } ${
-                            typeof cell === 'string' && cell.startsWith('+') ? 'text-sage font-semibold' :
-                            typeof cell === 'string' && cell.startsWith('−') ? 'text-destructive font-semibold' : ''
-                          }`}>
-                            {cell}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Footer */}
-              <div className="px-4 py-2 bg-warm-bg/30 border-t border-warm-border/50 flex items-center justify-between text-[10px] font-sans">
-                <span className="text-warm-muted">
-                  Showing {rows.length} of {rows.length} rows
-                </span>
-                <span onClick={exportCSV} className="text-brand-indigo font-semibold hover:underline cursor-pointer">
-                  Export CSV →
-                </span>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* ── Hint bar ───────────────────────────────────────────────── */}
-      <div className="self-center bg-white/70 px-4 py-1.5 border border-warm-border rounded-full shadow-sm text-[10px] font-mono text-warm-muted select-none">
-        Click cards to toggle · multi-select merges columns · {BATCH_CARDS.length} dimensions available
+            {/* Footer */}
+            <div className="px-4 py-2 bg-warm-bg/30 border-t border-warm-border/50 flex items-center justify-between text-[10px] font-sans">
+              <span className="text-warm-muted">
+                Showing {rows.length} of {rows.length} rows
+              </span>
+              <span onClick={exportCSV} className="text-brand-indigo font-semibold hover:underline cursor-pointer">
+                Export CSV →
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

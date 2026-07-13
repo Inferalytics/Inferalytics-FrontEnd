@@ -1,11 +1,26 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { FolderUp, Plus, Check } from 'lucide-react';
+import { FolderUp, Plus, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+const ECR_ASSETS = [
+  { id: 'ontology', name: 'Decision Ontology', desc: 'Ontological tags & vocabulary', details: 'Core entity definitions: Quarter (temporal dimension), Revenue (financial outcome target), Region (geographic dimension), and Product Line (segmentation factor). Mapped to enterprise schema.' },
+  { id: 'network', name: 'Relationship Network', desc: 'Active node connectivity map', details: 'Defined links: Quarter ➔ Revenue (time series), Region ↔ Revenue (geographic correlation), Product Line ➔ Cost Centre (allocation rule), Cost Centre ↔ Gross Margin (derived ratio).' },
+  { id: 'rules', name: 'Business Rules', desc: 'System constraints & bounds', details: 'Hard Constraints: Customer renewal churn must remain ≤ 6.0% post price adjustments. Soft Constraints: Cost centre budget variance must not exceed ±10%.' },
+  { id: 'model', name: 'Data Model', desc: 'Underlying spreadsheet files', details: 'Spreadsheets linked: q2_revenue_raw.xlsx (18 fields, 4,210 rows), cost_centre_2024.csv (9 fields, 1,802 rows), and region_mapping.json (6 fields, 142 rows).' },
+  { id: 'history', name: 'Decision History', desc: 'Past strategic outcomes', details: 'Reference cohort: 5% uniform price increase executed 18 months ago. Results: 3.8% peak churn, +4.2% net ARR change. Used as model priors.' },
+  { id: 'sim_history', name: 'Simulation History', desc: 'Active scenarios configurations', details: 'Configured projections: Scenario A (Baseline 8% YoY revenue growth), Scenario B (Optimised Newton-Raphson 18% uplift + 6% Cost Centre reduction).' },
+  { id: 'expert', name: 'Expert Knowledge', desc: 'Human-anchored constraints', details: 'Static anchors: Region multipliers and Gross Margin ratios pinned to static Q3 parameters based on CFO directives.' },
+  { id: 'confidence', name: 'Confidence Scores', desc: 'AI confidence ratings', details: 'Confidence indices: Ontology parsing (98%), Relationship correlation (92%), Churn predictive fit (94%). Composite ECR confidence score: 94.6%.' },
+  { id: 'behavior', name: 'Learned Behaviors', desc: 'Elasticities & agent curves', details: 'Segment parameters: Calculated Enterprise price elasticity coefficient of -1.45. Churn curve escalates exponentially when price change exceeds 10%.' },
+  { id: 'causal', name: 'Causal Relationships', desc: 'Optimisation impact paths', details: 'Causality stream: Strategic Price uplift % ➔ Segment Renewal Churn ➔ Operating Margin expansion ➔ Net EGR Achieved.' }
+];
+
 export default function LeftPanel() {
-  const { screen, batches, activeBatchId, setActiveBatch, leftSidebarOpen } = useStore();
+  const { screen, batches, activeBatchId, setActiveBatch, leftSidebarOpen, dimensions, toggleDimensionToBatcher } = useStore();
   const navigate = useNavigate();
+  const [expandedEcrAsset, setExpandedEcrAsset] = useState<string | null>(null);
+  const [ecrAssetsSectionExpanded, setEcrAssetsSectionExpanded] = useState(true);
 
   const handleNewBatch = () => {
     alert("Creating new optimization batch. (Mocked)");
@@ -80,6 +95,87 @@ export default function LeftPanel() {
         </div>
 
         <hr className="border-warm-border/40" />
+
+        {/* Batcher section (Screen 4 only or visible when there are batches) */}
+        {screen === 4 && (
+          <div className="flex flex-col gap-3">
+            <span className="text-[10px] font-bold text-warm-muted uppercase tracking-[0.08em] select-none">
+              Batcher ({dimensions.filter(d => d.selected).length})
+            </span>
+            <div className="flex flex-col gap-2">
+              {dimensions.filter(d => d.selected).length === 0 ? (
+                <div className="text-[10.5px] text-warm-muted italic p-3 border border-dashed border-warm-border rounded-xl text-center">
+                  Batcher is empty.
+                </div>
+              ) : (
+                dimensions.filter(d => d.selected).map(d => (
+                  <div key={d.id} className="bg-white border border-brand-indigo ring-1 ring-brand-indigo/20 shadow-sm rounded-xl p-2.5 relative flex flex-col gap-1.5 transition-all duration-200">
+                     <div className="flex justify-between items-start">
+                       <span className="text-[11px] font-bold text-warm-text">{d.name}</span>
+                       <button onClick={() => toggleDimensionToBatcher(d.id)} className="text-warm-muted hover:text-destructive transition-colors mt-0.5">
+                          <X className="h-3.5 w-3.5" />
+                       </button>
+                     </div>
+                     <span className={`w-fit text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                       d.type === 'numeric'     ? 'bg-lavender/30 text-brand-indigo' :
+                       d.type === 'categorical' ? 'bg-amber-warm-light text-amber-warm' :
+                                                 'bg-sage-light text-sage'
+                     }`}>{d.type}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ECR World Model Assets (Screen 4 only) */}
+        {screen === 4 && (
+          <div className="flex flex-col gap-3 font-sans">
+            <div 
+              className="flex items-center justify-between cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => setEcrAssetsSectionExpanded(!ecrAssetsSectionExpanded)}
+            >
+              <div className="flex items-center gap-1">
+                {ecrAssetsSectionExpanded ? <ChevronDown className="h-3.5 w-3.5 text-warm-muted" /> : <ChevronRight className="h-3.5 w-3.5 text-warm-muted" />}
+                <span className="text-[10px] font-bold text-warm-muted uppercase tracking-[0.08em] select-none">
+                  ECR Assets
+                </span>
+              </div>
+              <span className="text-[8.5px] font-mono text-brand-indigo bg-lavender/30 px-2 py-0.5 rounded-full font-bold">10 active</span>
+            </div>
+            
+            {ecrAssetsSectionExpanded && (
+              <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-1 -mr-1">
+                {ECR_ASSETS.map((asset) => {
+                  const isExpanded = expandedEcrAsset === asset.id;
+                  return (
+                    <div key={asset.id} className="flex flex-col border border-warm-border/50 rounded-xl bg-white overflow-hidden transition-all duration-200 shrink-0 shadow-sm">
+                      <div
+                        onClick={() => setExpandedEcrAsset(isExpanded ? null : asset.id)}
+                        className="p-2.5 flex items-center justify-between cursor-pointer hover:bg-secondary/40 transition-colors"
+                      >
+                        <div className="flex flex-col min-w-0 pr-2">
+                          <span className="text-[11px] font-bold text-warm-text truncate">{asset.name}</span>
+                          <span className="text-[9px] text-warm-muted truncate leading-none mt-0.5">{asset.desc}</span>
+                        </div>
+                        <span className="text-[9px] text-brand-indigo font-semibold shrink-0 select-none">
+                          {isExpanded ? 'Hide' : 'Inspect'}
+                        </span>
+                      </div>
+                      {isExpanded && (
+                        <div className="p-2.5 border-t border-warm-border/40 bg-warm-bg/10 text-[10.5px] text-warm-muted leading-relaxed font-sans">
+                          {asset.details}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {screen === 4 && <hr className="border-warm-border/40" />}
 
         {/* Upload Zone */}
         <div className="flex flex-col gap-3">

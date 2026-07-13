@@ -446,6 +446,19 @@ export const useStore = create<GlobalState>((set, get) => ({
             parameters: ['CAC', 'Revenue'],
             timeGranularity: 'Quarter'
           };
+        } else if (contentLower.includes('revenue') || contentLower.includes('region') || contentLower.includes('quarter') || contentLower.includes('cost centre') || contentLower.includes('product line')) {
+          reply = "I've updated the dimensions in the Batcher based on your request. Let me know what data you want to drill into next.";
+          const dimsToToggle = ['revenue', 'region', 'quarter', 'cost centre', 'product line'].filter(d => contentLower.includes(d));
+          const idMap: Record<string, string> = { 'revenue': 'rev', 'region': 'reg', 'quarter': 'qtr', 'cost centre': 'cost', 'product line': 'prod' };
+          dimsToToggle.forEach(d => {
+            const id = idMap[d];
+            if (id) {
+               // Only add if not already selected, or just toggle if that's what we want. Let's explicitly set them to true
+               set({
+                 dimensions: get().dimensions.map((dim) => dim.id === id ? { ...dim, selected: true } : dim)
+               });
+            }
+          });
         }
 
         const cleanThread = get().conversation.filter((m) => !m.isTyping);
@@ -490,12 +503,14 @@ export const useStore = create<GlobalState>((set, get) => ({
     set({ relationships: relations });
   },
 
-  setDimensionSelected: (id: string) => {
+  toggleDimensionToBatcher: (id: string) => {
     set({
-      dimensions: get().dimensions.map((d) => ({
-        ...d,
-        selected: d.id === id
-      }))
+      dimensions: get().dimensions.map((d) => {
+        if (d.id === id) {
+          return { ...d, selected: !d.selected };
+        }
+        return d;
+      })
     });
   },
 

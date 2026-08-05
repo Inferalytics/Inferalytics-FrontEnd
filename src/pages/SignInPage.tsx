@@ -17,6 +17,14 @@ export default function SignInPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [needsSecondFactor, setNeedsSecondFactor] = useState(false);
+  const [code, setCode] = useState('');
+
+  const completeSignIn = async (createdSessionId: string | null) => {
+    if (!setActive || !createdSessionId) return;
+    await setActive({ session: createdSessionId });
+    navigate('/');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,8 +40,10 @@ export default function SignInPage() {
       });
 
       if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
-        navigate('/');
+        await completeSignIn(result.createdSessionId);
+      } else if (result.status === 'needs_second_factor') {
+        await signIn.prepareSecondFactor({ strategy: 'email_code' });
+        setNeedsSecondFactor(true);
       } else {
         setError('Verification or additional steps required.');
       }
@@ -44,10 +54,86 @@ export default function SignInPage() {
     }
   };
 
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isLoaded) return;
+
+    setError('');
+    setLoading(true);
+
+    try {
+      const result = await signIn.attemptSecondFactor({
+        strategy: 'email_code',
+        code,
+      });
+
+      if (result.status === 'complete') {
+        await completeSignIn(result.createdSessionId);
+      } else {
+        setError('Verification or additional steps required.');
+      }
+    } catch (err: any) {
+      setError(err.errors?.[0]?.message || 'Invalid or expired code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (needsSecondFactor) {
+    return (
+      <AuthLayout>
+        <div className="w-full flex flex-col gap-6 px-2 md:px-4">
+          <div className="flex flex-col gap-2">
+            <h2 className="text-[24px] font-extrabold text-warm-text leading-tight tracking-tight font-sans">
+              Check your email
+            </h2>
+            <p className="text-[13px] text-warm-muted leading-relaxed">
+              Enter the verification code sent to {email}
+            </p>
+          </div>
+
+          {error && (
+            <div className="p-3.5 bg-destructive/10 border border-destructive/20 rounded-xl flex items-start gap-2.5 text-[11.5px] text-destructive">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleVerifyCode} className="flex flex-col gap-4.5">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider pl-0.5">
+                Verification Code
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                required
+                autoFocus
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="123456"
+                className="w-full px-3 py-2.5 border border-warm-border bg-white rounded-xl text-[12.5px] text-warm-text placeholder-warm-muted/50 focus:outline-none focus:border-brand-indigo focus:ring-1 focus:ring-ring transition-all"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !isLoaded}
+              className="w-full py-2.5 mt-2 rounded-xl bg-primary hover:opacity-90 active:opacity-100 text-primary-foreground text-[12.5px] font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+              Verify
+            </button>
+          </form>
+        </div>
+      </AuthLayout>
+    );
+  }
+
   return (
     <AuthLayout>
       <div className="w-full flex flex-col gap-6 px-2 md:px-4">
-        
+
         {/* Header / Welcoming titles */}
         <div className="flex flex-col gap-2">
           <h2 className="text-[24px] font-extrabold text-warm-text leading-tight tracking-tight font-sans">

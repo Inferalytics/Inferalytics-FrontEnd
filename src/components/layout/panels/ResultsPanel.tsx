@@ -3,28 +3,6 @@ import { Sparkles, TrendingUp, CheckCircle2, ArrowRight, BarChart3, AlertCircle 
 import { useNavigate, useParams } from 'react-router-dom';
 import { useStore } from '../../../store/useStore';
 
-// ── Mock quarterly breakdown ──────────────────────────────────────────────────
-const QUARTERLY = [
-  { q: 'Q1 2025', egr: '8.4%',  rev: '$1.92M', cost: '$640K', margin: '66.7%', achieved: 28 },
-  { q: 'Q2 2025', egr: '9.2%',  rev: '$2.04M', cost: '$712K', margin: '65.1%', achieved: 31 },
-  { q: 'Q3 2025', egr: '10.1%', rev: '$2.18M', cost: '$801K', margin: '63.3%', achieved: 34 },
-  { q: 'Q4 2025', egr: '13.2%', rev: '$2.40M', cost: '$884K', margin: '63.2%', achieved: 44, peak: true },
-];
-
-const METRICS = [
-  { name: 'Revenue',       value: '$2.40M', delta: '↑ +18%',  dir: 'up'   as const },
-  { name: 'Cost Centre',   value: '$980K',  delta: '↓ −6%',   dir: 'down' as const },
-  { name: 'Gross Margin',  value: '63.2%',  delta: '— stable', dir: 'flat' as const },
-  { name: 'Churn Rate',    value: '4.2%',   delta: '✓ ≤ 6%',  dir: 'up'   as const },
-  { name: 'EGR Achieved',  value: '13.2%',  delta: '↑ +1.2pp', dir: 'up'  as const },
-];
-
-const INSIGHTS = [
-  'Revenue uplift in Q4 accounts for ~60% of EGR gain.',
-  'Cost Centre reduction contributes additional 40%.',
-  'Churn constraint (≤ 6%) satisfied — actual 4.2%.',
-];
-
 // ── EGR arc helper ────────────────────────────────────────────────────────────
 function EGRGauge({ target, achieved }: { target: number; achieved: number }) {
   const pct     = Math.min((achieved / (target * 1.4)) * 100, 100);
@@ -75,11 +53,15 @@ function Spark({ color, path }: { color: string; path: string }) {
 }
 
 export default function ResultsPanel() {
-  const { egrTarget, optimisationResult, scenarios, toggleScenarioChecked, model, selectedProvenanceMetric, setSelectedProvenanceMetric, workspaceMetrics } = useStore();
+  const { egrTarget, optimisationResult, scenarios, toggleScenarioChecked, model, selectedProvenanceMetric, setSelectedProvenanceMetric, workspaceMetrics, growthRates } = useStore();
   const { subtab } = useParams<{ subtab?: string }>();
   const navigate   = useNavigate();
 
   const noResult = !optimisationResult;
+
+  const insights = optimisationResult
+    ? optimisationResult.rows.map(r => `${r.name}: ${r.value} (${r.delta})`)
+    : [];
 
   React.useEffect(() => {
     const activeChecked = scenarios.filter(s => s.checked);
@@ -182,9 +164,11 @@ export default function ResultsPanel() {
               </span>
               <EGRGauge target={optimisationResult.target} achieved={optimisationResult.egrAchieved} />
 
-              {/* Insights */}
+              {/* Insights — derived from the real solver result rows */}
               <div className="w-full flex flex-col gap-2 pt-2 border-t border-warm-border/40">
-                {INSIGHTS.map((insight, i) => (
+                {insights.length === 0 ? (
+                  <span className="text-[10.5px] text-warm-muted italic">No solver rows to summarize.</span>
+                ) : insights.map((insight, i) => (
                   <div key={i} className="flex items-start gap-2">
                     <CheckCircle2 className="h-3.5 w-3.5 text-sage shrink-0 mt-0.5" />
                     <span className="text-[10.5px] text-warm-muted leading-snug">{insight}</span>
@@ -226,40 +210,32 @@ export default function ResultsPanel() {
               </div>
             </div>
 
-            {/* Right: Quarterly breakdown */}
+            {/* Right: Growth breakdown — real per-segment figures from uploaded data */}
             <div className="col-span-12 lg:col-span-4 bg-white border border-warm-border rounded-2xl overflow-hidden shadow-card flex flex-col">
               <div className="px-4 py-3 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/20 flex items-center justify-between">
-                <span className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider">Quarterly EGR</span>
+                <span className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider">Growth by Segment</span>
                 <TrendingUp className="h-3.5 w-3.5 text-brand-indigo" />
               </div>
 
-              {/* Mini bar chart */}
-              <div className="px-4 py-3 flex items-end gap-2 h-24">
-                {QUARTERLY.map((q, i) => (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                    <div
-                      className={`w-full rounded-t-md transition-all ${q.peak ? 'bg-sage' : 'bg-brand-indigo/40'}`}
-                      style={{ height: `${q.achieved * 1.4}px` }}
-                    />
-                    <span className="text-[8px] font-mono text-warm-muted">{q.q.slice(0, 2)}{q.q.slice(3, 7)}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex flex-col divide-y divide-warm-border/30 flex-1">
-                {QUARTERLY.map((q, i) => (
-                  <div key={i} className={`flex items-center justify-between px-4 py-2 text-[11px] ${q.peak ? 'bg-sage-light/30' : ''}`}>
-                    <span className={`font-mono font-semibold ${q.peak ? 'text-sage' : 'text-warm-muted'}`}>{q.q}</span>
-                    <div className="flex items-center gap-3">
-                      <span className={`font-bold font-mono ${q.peak ? 'text-sage' : 'text-warm-text'}`}>{q.egr}</span>
-                      <span className="text-warm-muted text-[10px] font-mono">{q.rev}</span>
+              {growthRates.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center p-6 text-center">
+                  <span className="text-[11px] text-warm-muted">No segment breakdown yet — upload data to populate this.</span>
+                </div>
+              ) : (
+                <div className="flex flex-col divide-y divide-warm-border/30 flex-1">
+                  {growthRates.map((g, i) => (
+                    <div key={i} className="flex items-center justify-between px-4 py-2 text-[11px]">
+                      <span className="font-mono font-semibold text-warm-muted truncate max-w-[100px]" title={g.segment}>{g.segment}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold font-mono text-warm-text">{g.q4Proj}</span>
+                        <span className="text-warm-muted text-[10px] font-mono">{g.yoy}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
 
-              <div className="px-4 py-2.5 border-t border-warm-border/40 flex items-center justify-between text-[10.5px]">
-                <span className="text-warm-muted">Peak Q4 2025</span>
+              <div className="px-4 py-2.5 border-t border-warm-border/40 flex items-center justify-end text-[10.5px]">
                 <button onClick={() => navigate('/dashboard/workspace/scenarios')}
                   className="text-brand-indigo font-semibold hover:underline cursor-pointer flex items-center gap-1">
                   View scenarios <ArrowRight className="h-3 w-3" />
@@ -275,7 +251,8 @@ export default function ResultsPanel() {
         <div className="flex flex-col gap-5 animate-fade-in flex-1 justify-center items-center min-h-[60vh]">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full max-w-[680px] mx-auto">
             {scenarios.map((sc, si) => {
-              const isA = sc.id === 'A';
+              const isA = si === 0;
+              const methodLabel = sc.id.startsWith('fc-') ? 'Forecast' : 'Newton-Raphson';
               return (
                 <div
                   key={sc.id}
@@ -329,21 +306,6 @@ export default function ResultsPanel() {
                     />
                   </div>
 
-                  {/* Delta badges */}
-                  {!isA && (
-                    <div className="px-4 pb-3 flex flex-wrap gap-1.5">
-                      {[
-                        { label: 'EGR', delta: '+1.4pp' },
-                        { label: 'Revenue', delta: '+$400K' },
-                        { label: 'Cost', delta: '−$20K' },
-                      ].map(d => (
-                        <span key={d.label} className="text-[9.5px] font-bold font-mono px-2 py-0.5 rounded-full bg-sage-light text-sage border border-sage-border/40">
-                          {d.label} {d.delta}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
                   {/* Footer */}
                   <div className={`px-4 py-2.5 border-t mt-auto text-[11px] font-sans flex items-center justify-between ${
                     sc.checked ? (isA ? 'bg-lavender/10 border-lavender/30' : 'bg-sage-light/40 border-sage-border/40') : 'bg-warm-bg/30 border-warm-border/40'
@@ -352,7 +314,7 @@ export default function ResultsPanel() {
                       {sc.checked ? '✓ Selected for comparison' : 'Click to select'}
                     </span>
                     <span className="text-[9px] font-mono text-warm-muted">
-                      {isA ? 'Q2 Baseline' : 'Newton-Raphson'}
+                      {methodLabel}
                     </span>
                   </div>
                 </div>

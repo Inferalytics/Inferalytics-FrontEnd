@@ -7,66 +7,14 @@ interface ComparePanelProps {
   triggerToast: (msg: string) => void;
 }
 
-const ROWS = [
-  {
-    metric:   'Forecasted EGR',
-    category: 'Performance',
-    a: '11.8%',  b: '13.2%',  delta: '+1.4pp',
-    winner: 'b', trend: 'up',
-    note: 'Scenario B exceeds target by 1.2pp',
-  },
-  {
-    metric:   'Revenue Outcome',
-    category: 'Revenue',
-    a: '$2.00M', b: '$2.40M', delta: '+$400K',
-    winner: 'b', trend: 'up',
-    note: '+18% YoY driven by Q4 Enterprise uplift',
-  },
-  {
-    metric:   'Cost Allocation',
-    category: 'Cost',
-    a: '$1.00M', b: '$980K',  delta: '−$20K',
-    winner: 'b', trend: 'down',
-    note: 'Reduction in Cost Centre allocation',
-  },
-  {
-    metric:   'YoY Growth',
-    category: 'Revenue',
-    a: '+8%',    b: '+18%',   delta: '+10pp',
-    winner: 'b', trend: 'up',
-    note: 'Strong acceleration in optimised scenario',
-  },
-  {
-    metric:   'Churn Rate',
-    category: 'Risk',
-    a: '5.8%',   b: '4.2%',   delta: '−1.6pp',
-    winner: 'b', trend: 'down',
-    note: 'Well within 6% constraint',
-  },
-  {
-    metric:   'Gross Margin',
-    category: 'Efficiency',
-    a: '65.1%',  b: '63.2%',  delta: '−1.9pp',
-    winner: 'a', trend: 'flat',
-    note: 'Slight compression due to cost mix',
-  },
-  {
-    metric:   'EGR Gap vs Target',
-    category: 'Performance',
-    a: '−0.2pp', b: '+1.2pp', delta: '—',
-    winner: 'b', trend: 'up',
-    note: 'B meets and exceeds {egrTarget}% target',
-  },
-];
-
-const QUARTERLY = [
-  { q: 'Q1', a: 22, b: 24 },
-  { q: 'Q2', b: 31, a: 28 },
-  { q: 'Q3', b: 39, a: 33 },
-  { q: 'Q4', b: 52, a: 40 },
-];
-
-const CATEGORIES = ['Performance', 'Revenue', 'Cost', 'Risk', 'Efficiency'];
+type ComparisonRow = {
+  metric: string;
+  a: string;
+  b: string;
+  delta: string;
+  winner: 'a' | 'b' | 'tie';
+  trend: 'up' | 'down' | 'flat';
+};
 
 function DeltaBadge({ trend, delta }: { trend: string; delta: string }) {
   if (trend === 'up')   return <span className="flex items-center gap-0.5 text-sage font-bold"><TrendingUp className="h-3 w-3" />{delta}</span>;
@@ -74,95 +22,85 @@ function DeltaBadge({ trend, delta }: { trend: string; delta: string }) {
   return <span className="flex items-center gap-0.5 text-warm-muted"><Minus className="h-3 w-3" />{delta}</span>;
 }
 
+function sparklinePath(data: number[]): string {
+  if (data.length === 0) return '';
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const stepX = 100 / (data.length - 1 || 1);
+  return data
+    .map((v, i) => {
+      const x = i * stepX;
+      const y = 24 - ((v - min) / range) * 24;
+      return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(' ');
+}
+
+const parseNum = (v: string): number => {
+  const clean = v.replace(/[^0-9.\-]/g, '');
+  const num = parseFloat(clean) || 0;
+  if (v.toLowerCase().includes('m')) return num * 1_000_000;
+  if (v.toLowerCase().includes('k')) return num * 1_000;
+  return num;
+};
+
+const isCurrency = (v: string): boolean => v.trim().startsWith('$');
+
+function buildRow(metric: string, aVal: string, bVal: string): ComparisonRow {
+  const aNum = parseNum(aVal);
+  const bNum = parseNum(bVal);
+  const deltaNum = bNum - aNum;
+  const isTie = aNum === bNum;
+  const winner: 'a' | 'b' | 'tie' = isTie ? 'tie' : (bNum > aNum ? 'b' : 'a');
+  const trend: 'up' | 'down' | 'flat' = isTie ? 'flat' : (bNum > aNum ? 'up' : 'down');
+  const delta = isTie
+    ? '—'
+    : isCurrency(aVal) || isCurrency(bVal)
+      ? `${deltaNum >= 0 ? '+' : '-'}$${Math.abs(deltaNum / 1000).toFixed(0)}K`
+      : `${deltaNum >= 0 ? '+' : ''}${deltaNum.toFixed(1)}pp`;
+  return { metric, a: aVal, b: bVal, delta, winner, trend };
+}
+
 export default function ComparePanel({ triggerToast }: ComparePanelProps) {
-  const { egrTarget, model, selectedProvenanceMetric, setSelectedProvenanceMetric, workspaceMetrics } = useStore();
+  const { egrTarget, model, selectedProvenanceMetric, setSelectedProvenanceMetric, scenarios } = useStore();
   const navigate = useNavigate();
 
-  const getVal = (metricName: string, defaultVal: string) => {
-    return workspaceMetrics.find(m => m.name.toLowerCase() === metricName.toLowerCase())?.value || defaultVal;
-  };
+  const checked = scenarios.filter(s => s.checked);
+  const scenarioA = checked[0];
+  const scenarioB = checked[1];
+  const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-  const revStr = getVal('Revenue', '$2.40M');
-  const costStr = getVal('Cost Centre', '$980K');
-  const churnStr = getVal('Churn Rate', '4.2%');
-  const marginStr = getVal('Gross Margin', '63.2%');
-  const egrStr = getVal('EGR Achieved', '13.2%');
+  if (!scenarioA || !scenarioB) {
+    return (
+      <div className="flex flex-col gap-5 animate-float-up w-full max-w-[960px] mx-auto pt-4 items-center justify-center min-h-[60vh] text-center">
+        <div className="h-12 w-12 rounded-2xl bg-secondary flex items-center justify-center">
+          <AlertTriangle className="h-6 w-6 text-warm-muted" />
+        </div>
+        <span className="text-[13px] font-semibold text-warm-text">Select two scenarios to compare</span>
+        <span className="text-[12px] text-warm-muted">Check two scenarios on the Results screen first.</span>
+        <button onClick={() => navigate('/dashboard/workspace/scenarios')}
+          className="flex items-center gap-1.5 px-4 py-2 bg-brand-indigo text-white rounded-xl text-[12px] font-bold cursor-pointer hover:opacity-90 transition-colors">
+          <ArrowLeft className="h-3.5 w-3.5" /> Back to Scenarios
+        </button>
+      </div>
+    );
+  }
 
-  const parseValue = (v: string): number => {
-    const clean = v.replace(/[^0-9.]/g, '');
-    let num = parseFloat(clean) || 0;
-    if (v.toLowerCase().includes('m')) return num * 1000000;
-    if (v.toLowerCase().includes('k')) return num * 1000;
-    return num;
-  };
-
-  const revNum = parseValue(revStr);
-  const costNum = parseValue(costStr);
-  const churnNum = parseValue(churnStr);
-  const egrNum = parseValue(egrStr);
-
-  const deltaRev = revNum - 2000000;
-  const deltaRevStr = deltaRev >= 0 ? `+$${(deltaRev/1000).toFixed(0)}K` : `-$${(Math.abs(deltaRev)/1000).toFixed(0)}K`;
-
-  const deltaCost = costNum - 1000000;
-  const deltaCostStr = deltaCost <= 0 ? `−$${(Math.abs(deltaCost)/1000).toFixed(0)}K` : `+$${(deltaCost/1000).toFixed(0)}K`;
-
-  const deltaEgr = egrNum - 11.8;
-  const deltaEgrStr = `${deltaEgr >= 0 ? '+' : ''}${deltaEgr.toFixed(1)}pp`;
-
-  const ROWS = [
-    {
-      metric:   'Forecasted EGR',
-      category: 'Performance',
-      a: '11.8%',  b: egrStr,  delta: deltaEgrStr,
-      winner: egrNum >= 11.8 ? 'b' : 'a', trend: egrNum >= 11.8 ? 'up' : 'down',
-      note: egrNum >= 12 ? `Scenario B exceeds target by ${(egrNum - 12).toFixed(1)}pp` : `Scenario B below target by ${(12 - egrNum).toFixed(1)}pp`,
-    },
-    {
-      metric:   'Revenue Outcome',
-      category: 'Revenue',
-      a: '$2.00M', b: revStr, delta: deltaRevStr,
-      winner: revNum >= 2000000 ? 'b' : 'a', trend: revNum >= 2000000 ? 'up' : 'down',
-      note: `+${((revNum/2000000 - 1)*100 + 8).toFixed(0)}% YoY driven by Q4 Enterprise uplift`,
-    },
-    {
-      metric:   'Cost Allocation',
-      category: 'Cost',
-      a: '$1.00M', b: costStr,  delta: deltaCostStr,
-      winner: costNum <= 1000000 ? 'b' : 'a', trend: costNum <= 1000000 ? 'down' : 'up',
-      note: 'Reduction in Cost Centre allocation',
-    },
-    {
-      metric:   'Churn Rate',
-      category: 'Risk',
-      a: '5.8%',   b: churnStr,   delta: `${(churnNum - 5.8).toFixed(1)}pp`,
-      winner: churnNum <= 5.8 ? 'b' : 'a', trend: churnNum <= 5.8 ? 'down' : 'up',
-      note: churnNum <= 6.0 ? 'Well within 6% constraint' : 'Violates 6% constraint limit',
-    },
-    {
-      metric:   'Gross Margin',
-      category: 'Efficiency',
-      a: '65.1%',  b: marginStr,  delta: `${(parseValue(marginStr) - 65.1).toFixed(1)}pp`,
-      winner: parseValue(marginStr) >= 65.1 ? 'b' : 'a', trend: parseValue(marginStr) >= 65.1 ? 'up' : 'down',
-      note: 'Margin based on ECR cost center allocation',
-    },
-    {
-      metric:   'EGR Gap vs Target',
-      category: 'Performance',
-      a: '−0.2pp', b: `${(egrNum - 12) >= 0 ? '+' : ''}${(egrNum - 12).toFixed(1)}pp`, delta: `${(egrNum - 11.8).toFixed(1)}pp`,
-      winner: egrNum >= 11.8 ? 'b' : 'a', trend: 'up',
-      note: egrNum >= 12 ? 'Target fully met' : 'Target gap remains unsatisfied',
-    }
+  const ROWS: ComparisonRow[] = [
+    buildRow('Revenue', scenarioA.revenue, scenarioB.revenue),
+    buildRow('YoY Growth', scenarioA.yoy, scenarioB.yoy),
+    buildRow('EGR', scenarioA.egr, scenarioB.egr),
   ];
 
   const bWins = ROWS.filter(r => r.winner === 'b').length;
   const aWins = ROWS.filter(r => r.winner === 'a').length;
-  const now   = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const winnerLabel = bWins === aWins ? 'Tied' : (bWins > aWins ? scenarioB.label : scenarioA.label);
 
   const exportCSV = () => {
-    const header = ['Metric', 'Category', 'Scenario A', 'Scenario B', 'Delta', 'Winner', 'Note'];
+    const header = ['Metric', scenarioA.label, scenarioB.label, 'Delta', 'Winner'];
     const csvRows = ROWS.map(r =>
-      [r.metric, r.category, r.a, r.b, r.delta, r.winner.toUpperCase(), r.note].map(v => `"${v}"`).join(',')
+      [r.metric, r.a, r.b, r.delta, (r.winner === 'a' ? scenarioA.label : scenarioB.label)].map(v => `"${v}"`).join(',')
     );
     const csv  = [header.join(','), ...csvRows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -197,8 +135,7 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
         }`}>
           <div className="flex items-center gap-2">
             <div className="h-2.5 w-2.5 rounded-full bg-brand-indigo" />
-            <span className="text-[12px] font-bold text-warm-text">Scenario A</span>
-            <span className="text-[9.5px] text-warm-muted font-mono">Baseline</span>
+            <span className="text-[12px] font-bold text-warm-text truncate max-w-[140px]" title={scenarioA.label}>{scenarioA.label}</span>
           </div>
           <span className="text-[36px] font-extrabold text-brand-indigo leading-none">{aWins}</span>
           <span className="text-[10px] text-warm-muted">metrics won</span>
@@ -207,9 +144,9 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
         {/* Verdict */}
         <div className="bg-sage-light border border-sage-border rounded-2xl p-4 flex flex-col items-center justify-center gap-2 shadow-card">
           <Trophy className="h-6 w-6 text-sage" />
-          <span className="text-[13px] font-extrabold text-sage">Scenario B Wins</span>
+          <span className="text-[13px] font-extrabold text-sage truncate max-w-full" title={winnerLabel}>{winnerLabel} Wins</span>
           <span className="text-[10px] text-warm-muted text-center leading-relaxed">
-            {bWins} of {ROWS.length} metrics · EGR +1.4pp
+            {Math.max(bWins, aWins)} of {ROWS.length} metrics
           </span>
         </div>
 
@@ -219,8 +156,7 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
         }`}>
           <div className="flex items-center gap-2">
             <div className="h-2.5 w-2.5 rounded-full bg-sage" />
-            <span className="text-[12px] font-bold text-warm-text">Scenario B</span>
-            <span className="text-[9.5px] text-warm-muted font-mono">Optimised</span>
+            <span className="text-[12px] font-bold text-warm-text truncate max-w-[140px]" title={scenarioB.label}>{scenarioB.label}</span>
           </div>
           <span className="text-[36px] font-extrabold text-sage leading-none">{bWins}</span>
           <span className="text-[10px] text-warm-muted">metrics won</span>
@@ -232,112 +168,71 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
         <div className="w-full overflow-x-auto no-scrollbar">
           <div className="min-w-[768px]">
             {/* Column headers */}
-        <div className="grid grid-cols-[1.6fr_1fr_1fr_0.8fr_1.4fr] bg-warm-bg/60 border-b border-warm-border text-[10px] font-bold text-warm-muted uppercase tracking-wide font-sans">
+        <div className="grid grid-cols-[1.6fr_1fr_1fr_0.8fr] bg-warm-bg/60 border-b border-warm-border text-[10px] font-bold text-warm-muted uppercase tracking-wide font-sans">
           <div className="px-4 py-2.5 flex justify-between items-center w-full">
             <span>Metric</span>
             <span className="text-[8px] text-brand-indigo font-normal normal-case tracking-normal">click row for provenance</span>
           </div>
-          <div className="px-3 py-2.5 flex items-center gap-1.5">
-            <div className="h-2 w-2 rounded-full bg-brand-indigo shrink-0" /> Scenario A
+          <div className="px-3 py-2.5 flex items-center gap-1.5 truncate">
+            <div className="h-2 w-2 rounded-full bg-brand-indigo shrink-0" /> {scenarioA.label}
           </div>
-          <div className="px-3 py-2.5 flex items-center gap-1.5">
-            <div className="h-2 w-2 rounded-full bg-sage shrink-0" /> Scenario B
+          <div className="px-3 py-2.5 flex items-center gap-1.5 truncate">
+            <div className="h-2 w-2 rounded-full bg-sage shrink-0" /> {scenarioB.label}
           </div>
           <div className="px-3 py-2.5">Δ Delta</div>
-          <div className="px-3 py-2.5">Insight</div>
         </div>
 
-        {/* Category groups */}
-        {CATEGORIES.map(cat => {
-          const catRows = ROWS.filter(r => r.category === cat);
-          if (!catRows.length) return null;
+        {ROWS.map((row) => {
+          const isSelected = selectedProvenanceMetric?.toLowerCase() === row.metric.toLowerCase();
           return (
-            <div key={cat}>
-              <div className="px-4 py-1.5 bg-warm-bg/30 border-b border-warm-border/40">
-                <span className="text-[9px] font-bold text-warm-muted uppercase tracking-widest">{cat}</span>
+            <div key={row.metric}
+              onClick={() => setSelectedProvenanceMetric(row.metric)}
+              className={`grid grid-cols-[1.6fr_1fr_1fr_0.8fr] border-b border-warm-border/30 hover:bg-lavender/5 hover:text-brand-indigo transition-colors items-center cursor-pointer ${
+                isSelected ? 'bg-lavender/10 font-medium border-l-2 border-brand-indigo' : ''
+              }`}>
+              <div className="px-4 py-3 flex items-center gap-2">
+                {row.winner === 'tie'
+                  ? <Minus className="h-3.5 w-3.5 text-warm-muted shrink-0" />
+                  : row.winner === 'b'
+                    ? <Check className="h-3.5 w-3.5 text-sage shrink-0" />
+                    : <AlertTriangle className="h-3.5 w-3.5 text-amber-warm shrink-0" />
+                }
+                <span className="text-[12px] font-semibold text-warm-text">{row.metric}</span>
               </div>
-              {catRows.map((row) => {
-                const isSelected = selectedProvenanceMetric?.toLowerCase() === row.metric.toLowerCase();
-                return (
-                  <div key={row.metric}
-                    onClick={() => setSelectedProvenanceMetric(row.metric)}
-                    className={`grid grid-cols-[1.6fr_1fr_1fr_0.8fr_1.4fr] border-b border-warm-border/30 hover:bg-lavender/5 hover:text-brand-indigo transition-colors items-center cursor-pointer ${
-                      isSelected ? 'bg-lavender/10 font-medium border-l-2 border-brand-indigo' : ''
-                    }`}>
-                    <div className="px-4 py-3 flex items-center gap-2">
-                      {row.winner === 'b'
-                        ? <Check className="h-3.5 w-3.5 text-sage shrink-0" />
-                        : <AlertTriangle className="h-3.5 w-3.5 text-amber-warm shrink-0" />
-                      }
-                      <span className="text-[12px] font-semibold text-warm-text">{row.metric}</span>
-                    </div>
-                    <div className={`px-3 py-3 font-mono text-[12px] ${row.winner === 'a' ? 'font-bold text-brand-indigo' : 'text-warm-muted'}`}>
-                      {row.a}
-                    </div>
-                    <div className={`px-3 py-3 font-mono text-[12px] ${row.winner === 'b' ? 'font-bold text-sage bg-sage-light/20' : 'text-warm-muted'}`}>
-                      {row.b}
-                    </div>
-                    <div className="px-3 py-3 text-[11px]">
-                      <DeltaBadge trend={row.trend} delta={row.delta} />
-                    </div>
-                    <div className="px-3 py-3 text-[10.5px] text-warm-muted leading-snug">
-                      {row.note.replace('{egrTarget}', String(egrTarget))}
-                    </div>
-                  </div>
-                );
-              })}
+              <div className={`px-3 py-3 font-mono text-[12px] ${row.winner === 'a' ? 'font-bold text-brand-indigo' : 'text-warm-muted'}`}>
+                {row.a}
+              </div>
+              <div className={`px-3 py-3 font-mono text-[12px] ${row.winner === 'b' ? 'font-bold text-sage bg-sage-light/20' : 'text-warm-muted'}`}>
+                {row.b}
+              </div>
+              <div className="px-3 py-3 text-[11px]">
+                <DeltaBadge trend={row.trend} delta={row.delta} />
+              </div>
             </div>
           );
         })}
 
-        {/* Sparkline trajectory row */}
-        <div className="grid grid-cols-[1.6fr_1fr_1fr_0.8fr_1.4fr] border-b border-warm-border/30 items-center bg-warm-bg/5">
+        {/* Real sparkline trajectory row — from each scenario's actual sparkData */}
+        <div className="grid grid-cols-[1.6fr_1fr_1fr_0.8fr] items-center bg-warm-bg/5">
           <div className="px-4 py-3 flex items-center gap-2">
             <TrendingUp className="h-3.5 w-3.5 text-brand-indigo shrink-0" />
-            <span className="text-[12px] font-semibold text-warm-text">EGR Trajectory</span>
+            <span className="text-[12px] font-semibold text-warm-text">Trajectory</span>
           </div>
           <div className="px-3 py-2">
             <div className="h-10 bg-secondary/30 rounded-lg border border-warm-border/40 p-1">
               <svg className="w-full h-full" viewBox="0 0 100 28" preserveAspectRatio="none">
-                <path d="M 0 24 Q 20 20 40 16 T 70 9 T 100 2" fill="none" stroke="#6E69BE" strokeWidth="2.2" />
+                <path d={sparklinePath(scenarioA.sparkData)} fill="none" stroke="#6E69BE" strokeWidth="2.2" />
               </svg>
             </div>
           </div>
           <div className="px-3 py-2">
             <div className="h-10 bg-sage-light/20 rounded-lg border border-sage-border/40 p-1">
               <svg className="w-full h-full" viewBox="0 0 100 28" preserveAspectRatio="none">
-                <path d="M 0 24 Q 20 18 40 12 T 70 5 T 100 0" fill="none" stroke="#8EA885" strokeWidth="2.2" />
+                <path d={sparklinePath(scenarioB.sparkData)} fill="none" stroke="#8EA885" strokeWidth="2.2" />
               </svg>
             </div>
           </div>
-          <div className="px-3 py-3 text-[11px] font-semibold text-sage">B steeper</div>
-          <div className="px-3 py-3 text-[10.5px] text-warm-muted">Scenario B reaches peak EGR faster</div>
-        </div>
-
-        {/* Bar chart row */}
-        <div className="grid grid-cols-[1.6fr_1fr_1fr_0.8fr_1.4fr] items-center">
-          <div className="px-4 py-3 flex items-center gap-2">
-            <span className="text-[12px] font-semibold text-warm-text">Quarterly EGR</span>
-          </div>
-          <div className="col-span-2 px-3 py-3">
-            <div className="flex items-end gap-1.5 h-12">
-              {QUARTERLY.map((q) => (
-                <div key={q.q} className="flex-1 flex flex-col items-center gap-1">
-                  <div className="w-full flex items-end gap-0.5">
-                    <div className="flex-1 bg-brand-indigo/40 rounded-sm" style={{ height: `${q.a * 0.8}px` }} />
-                    <div className="flex-1 bg-sage rounded-sm" style={{ height: `${q.b * 0.8}px` }} />
-                  </div>
-                  <span className="text-[8px] font-mono text-warm-muted">{q.q}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="px-3 py-3 col-span-2">
-            <div className="flex items-center gap-3 text-[10px] text-warm-muted">
-              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-brand-indigo/40 inline-block" /> Scenario A</span>
-              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-sage inline-block" /> Scenario B</span>
-            </div>
-          </div>
+          <div className="px-3 py-3 text-[10.5px] text-warm-muted">from stored run history</div>
         </div>
        </div>
       </div>
@@ -347,8 +242,8 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
       <div className="flex items-center justify-between bg-white border border-warm-border rounded-2xl px-5 py-3.5 shadow-card">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-sage" />
-          <span className="text-[12px] font-semibold text-sage">
-            Scenario B outperforms on {bWins}/{ROWS.length} metrics. Recommended.
+          <span className="text-[12px] font-semibold text-sage truncate max-w-[420px]">
+            {winnerLabel} outperforms on {Math.max(bWins, aWins)}/{ROWS.length} metrics.
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -357,9 +252,9 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
             <Download className="h-3.5 w-3.5 text-warm-muted" /> Export CSV
           </button>
           <button
-            onClick={() => triggerToast('Scenario B locked. Recommendations dispatched to region leads!')}
+            onClick={() => triggerToast(`${bWins >= aWins ? scenarioB.label : scenarioA.label} locked in.`)}
             className="px-4 py-1.5 bg-sage hover:bg-sage/90 text-white rounded-xl text-[12px] font-bold shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer">
-            <Check className="h-3.5 w-3.5" /> Lock Scenario B
+            <Check className="h-3.5 w-3.5" /> Lock {bWins >= aWins ? scenarioB.label : scenarioA.label}
           </button>
         </div>
       </div>

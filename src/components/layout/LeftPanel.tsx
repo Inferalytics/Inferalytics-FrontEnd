@@ -3,27 +3,43 @@ import { useStore } from '../../store/useStore';
 import { FolderUp, Plus, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const ECR_ASSETS = [
-  { id: 'ontology', name: 'Decision Ontology', desc: 'Ontological tags & vocabulary', details: 'Core entity definitions: Quarter (temporal dimension), Revenue (financial outcome target), Region (geographic dimension), and Product Line (segmentation factor). Mapped to enterprise schema.' },
-  { id: 'network', name: 'Relationship Network', desc: 'Active node connectivity map', details: 'Defined links: Quarter ➔ Revenue (time series), Region ↔ Revenue (geographic correlation), Product Line ➔ Cost Centre (allocation rule), Cost Centre ↔ Gross Margin (derived ratio).' },
-  { id: 'rules', name: 'Business Rules', desc: 'System constraints & bounds', details: 'Hard Constraints: Customer renewal churn must remain ≤ 6.0% post price adjustments. Soft Constraints: Cost centre budget variance must not exceed ±10%.' },
-  { id: 'model', name: 'Data Model', desc: 'Underlying spreadsheet files', details: 'Spreadsheets linked: q2_revenue_raw.xlsx (18 fields, 4,210 rows), cost_centre_2024.csv (9 fields, 1,802 rows), and region_mapping.json (6 fields, 142 rows).' },
-  { id: 'history', name: 'Decision History', desc: 'Past strategic outcomes', details: 'Reference cohort: 5% uniform price increase executed 18 months ago. Results: 3.8% peak churn, +4.2% net ARR change. Used as model priors.' },
-  { id: 'sim_history', name: 'Simulation History', desc: 'Active scenarios configurations', details: 'Configured projections: Scenario A (Baseline 8% YoY revenue growth), Scenario B (Optimised Newton-Raphson 18% uplift + 6% Cost Centre reduction).' },
-  { id: 'expert', name: 'Expert Knowledge', desc: 'Human-anchored constraints', details: 'Static anchors: Region multipliers and Gross Margin ratios pinned to static Q3 parameters based on CFO directives.' },
-  { id: 'confidence', name: 'Confidence Scores', desc: 'AI confidence ratings', details: 'Confidence indices: Ontology parsing (98%), Relationship correlation (92%), Churn predictive fit (94%). Composite ECR confidence score: 94.6%.' },
-  { id: 'behavior', name: 'Learned Behaviors', desc: 'Elasticities & agent curves', details: 'Segment parameters: Calculated Enterprise price elasticity coefficient of -1.45. Churn curve escalates exponentially when price change exceeds 10%.' },
-  { id: 'causal', name: 'Causal Relationships', desc: 'Optimisation impact paths', details: 'Causality stream: Strategic Price uplift % ➔ Segment Renewal Churn ➔ Operating Margin expansion ➔ Net EGR Achieved.' }
-];
-
 export default function LeftPanel() {
-  const { screen, batches, activeBatchId, setActiveBatch, leftSidebarOpen, dimensions, toggleDimensionToBatcher } = useStore();
+  const { screen, batches, activeBatchId, setActiveBatch, leftSidebarOpen, dimensions, toggleDimensionToBatcher, setup, scenarios, createBatchApi } = useStore();
   const navigate = useNavigate();
   const [expandedEcrAsset, setExpandedEcrAsset] = useState<string | null>(null);
   const [ecrAssetsSectionExpanded, setEcrAssetsSectionExpanded] = useState(true);
+  const [isCreatingBatch, setIsCreatingBatch] = useState(false);
 
-  const handleNewBatch = () => {
-    alert("Creating new optimization batch. (Mocked)");
+  const ecrAssets: { id: string; name: string; desc: string; details: string }[] = [
+    ...(setup.sources.length > 0 ? [{
+      id: 'model',
+      name: 'Data Model',
+      desc: 'Underlying uploaded files',
+      details: setup.sources.map(s => `${s.name} (${s.fields} fields, ${s.rows.toLocaleString()} rows)`).join('; '),
+    }] : []),
+    ...(scenarios.length > 0 ? [{
+      id: 'sim_history',
+      name: 'Simulation History',
+      desc: 'Scenario runs for this batch',
+      details: scenarios.map(s => `${s.label}: revenue ${s.revenue}, EGR ${s.egr}`).join('; '),
+    }] : []),
+  ];
+
+  const handleNewBatch = async () => {
+    const defaultName = `Batch ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const batchName = window.prompt('Enter name for the new batch:', defaultName);
+    if (!batchName) return;
+
+    try {
+      setIsCreatingBatch(true);
+      if (createBatchApi) {
+        await createBatchApi(batchName);
+      }
+    } catch (err) {
+      console.error('Failed to create batch:', err);
+    } finally {
+      setIsCreatingBatch(false);
+    }
   };
 
   const handleUploadClick = () => {
@@ -87,10 +103,11 @@ export default function LeftPanel() {
 
           <button
             onClick={handleNewBatch}
-            className="flex items-center justify-center gap-1.5 py-2 px-3 border border-dashed border-warm-border hover:border-warm-border-strong hover:bg-muted text-warm-muted hover:text-warm-text rounded-xl text-[12px] font-medium transition-all cursor-pointer"
+            disabled={isCreatingBatch}
+            className="flex items-center justify-center gap-1.5 py-2 px-3 border border-dashed border-warm-border hover:border-warm-border-strong hover:bg-muted text-warm-muted hover:text-warm-text rounded-xl text-[12px] font-medium transition-all cursor-pointer disabled:opacity-50"
           >
             <Plus className="h-3.5 w-3.5" />
-            New Batch
+            {isCreatingBatch ? 'Creating…' : 'New Batch'}
           </button>
         </div>
 
@@ -141,12 +158,17 @@ export default function LeftPanel() {
                   ECR Assets
                 </span>
               </div>
-              <span className="text-[8.5px] font-mono text-brand-indigo bg-lavender/30 px-2 py-0.5 rounded-full font-bold">10 active</span>
+              <span className="text-[8.5px] font-mono text-brand-indigo bg-lavender/30 px-2 py-0.5 rounded-full font-bold">{ecrAssets.length} active</span>
             </div>
-            
+
             {ecrAssetsSectionExpanded && (
               <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-1 -mr-1">
-                {ECR_ASSETS.map((asset) => {
+                {ecrAssets.length === 0 && (
+                  <div className="text-[10.5px] text-warm-muted italic p-3 border border-dashed border-warm-border rounded-xl text-center">
+                    No ECR assets yet. Upload data to populate the Data Model.
+                  </div>
+                )}
+                {ecrAssets.map((asset) => {
                   const isExpanded = expandedEcrAsset === asset.id;
                   return (
                     <div key={asset.id} className="flex flex-col border border-warm-border/50 rounded-xl bg-white overflow-hidden transition-all duration-200 shrink-0 shadow-sm">
@@ -200,28 +222,6 @@ export default function LeftPanel() {
             </div>
           </div>
 
-          {/* Conditional upload progress card (shown on screen 4 Batch) */}
-          {screen === 4 && (
-            <div className="bg-white border border-warm-border p-3 rounded-xl shadow-sm animate-float-up">
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-[11px] font-semibold font-mono text-warm-text truncate max-w-[120px]">
-                  q2_revenue_raw.xlsx
-                </span>
-                <span className="text-[9px] font-bold bg-lavender/40 text-brand-indigo px-1 py-0.5 rounded font-mono">
-                  78%
-                </span>
-              </div>
-              <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden mb-1.5 border border-warm-border/30">
-                <div
-                  className="bg-gradient-to-r from-peach to-brand-indigo h-full rounded-full transition-all duration-500"
-                  style={{ width: '78%' }}
-                />
-              </div>
-              <span className="text-[9px] text-warm-muted font-mono block">
-                Vectorising 14 / 18 fields...
-              </span>
-            </div>
-          )}
         </div>
       </div>
 

@@ -1,3 +1,5 @@
+export * from './api';
+
 export type ModelType = 'Newton-Raphson' | 'Holt-Winters' | 'Monte Carlo' | 'auto';
 
 export interface Batch {
@@ -115,6 +117,7 @@ export interface GlobalState {
   setTimeGranularity: (val: string) => void;
   toggleRelationshipConfirmed: (index: number) => void;
   setDimensionSelected: (id: string) => void;
+  toggleDimensionToBatcher: (id: string) => void;
   setEgrTarget: (val: number) => void;
   toggleScenarioChecked: (id: string) => void;
   runOptimisation: (callback: () => void) => void;
@@ -124,4 +127,11 @@ export interface GlobalState {
   rightSidebarOpen: boolean;
   setLeftSidebarOpen: (open: boolean) => void;
   setRightSidebarOpen: (open: boolean) => void;
+
+  // Async API Action helpers
+  fetchBatchesFromApi?: () => Promise<void>;
+  createBatchApi?: (name: string) => Promise<string>;
+  switchBatchApi?: (id: string) => Promise<void>;
+  deleteBatchApi?: (id: string) => Promise<void>;
+  syncBackendState?: () => Promise<void>;
 }

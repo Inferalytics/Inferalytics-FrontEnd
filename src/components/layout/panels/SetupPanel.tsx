@@ -1,35 +1,35 @@
-import React, { useState } from 'react';
-import { Sparkles, ArrowRight, FileText } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Sparkles, ArrowRight, FileText, Upload, Loader2, Plus } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useStore } from '../../../store/useStore';
+import api from '../../../api';
 
-const tableSchemas: Record<string, { col: string; type: string; sample: string }[]> = {
-  'q2_revenue_raw.xlsx': [
-    { col: 'customer_id', type: 'Text Identifier', sample: 'cust_9812_ea' },
-    { col: 'revenue_arr', type: 'Currency (USD)', sample: '$124,500.00' },
-    { col: 'tier', type: 'Category (Text)', sample: 'Enterprise' },
-    { col: 'renewal_quarter', type: 'Quarter Code', sample: 'Q225' },
-    { col: 'region', type: 'Region Code', sample: 'EMEA' }
-  ],
-  'cost_centre_2024.csv': [
-    { col: 'department_id', type: 'Text Identifier', sample: 'dept_sales_us' },
-    { col: 'budget_allocation', type: 'Currency (USD)', sample: '$450,000.00' },
-    { col: 'headcount', type: 'Integer (Count)', sample: '14' },
-    { col: 'overhead_cost', type: 'Currency (USD)', sample: '$32,100.00' }
-  ],
-  'region_mapping.json': [
-    { col: 'region_code', type: 'Region Code', sample: 'APAC' },
-    { col: 'market_size', type: 'Currency (USD)', sample: '$2,400,000.00' },
-    { col: 'active_customers', type: 'Integer (Count)', sample: '382' },
-    { col: 'gdp_growth', type: 'Percentage', sample: '4.2%' }
-  ]
-};
+// Dynamic table details inspector
 
 export default function SetupPanel() {
-  const { setup, toggleSegment, toggleParameter, setFocalPoint, setTimeGranularity } = useStore();
+  const { setup, toggleSegment, toggleParameter, setFocalPoint, setTimeGranularity, syncBackendState, activeBatchId, addMessage } = useStore();
   const { subtab } = useParams<{ subtab?: string }>();
   const navigate = useNavigate();
   const [inspectedTableId, setInspectedTableId] = useState<string | null>(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadLoading(true);
+      await api.uploadFile(file);
+      if (syncBackendState) {
+        await syncBackendState();
+      }
+    } catch (err: any) {
+      console.error('Failed to upload file:', err);
+    } finally {
+      setUploadLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const isFocalPointMissing = !setup.focalPoint || !setup.focalPoint.trim();
   const isSegmentsMissing = !setup.segments || setup.segments.length === 0;
@@ -38,6 +38,14 @@ export default function SetupPanel() {
 
   return (
     <div className="flex flex-col gap-6 animate-float-up pt-4 max-w-[960px] w-full mx-auto">
+      {/* Hidden File Input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        accept=".csv,.xlsx,.xls,.docx,.doc,.json"
+        className="hidden"
+      />
       {/* Setup Card */}
       <div className="w-full bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl shadow-float overflow-hidden flex flex-col justify-between transition-all">
         <div className="p-6 border-b border-warm-border/60 bg-white/40">
@@ -136,7 +144,7 @@ export default function SetupPanel() {
                   <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">Customer groups or regions to analyze.</span>
                 </div>
                 <div className="col-span-1 md:col-span-3 flex flex-wrap gap-1.5">
-                  {['Region', 'Product Line', 'Customer Tier', 'Sales Channel'].map((seg) => {
+                  {Array.from(new Set([...setup.segments, 'Region', 'Product Line', 'Category'])).map((seg) => {
                     const isSel = setup.segments.includes(seg);
                     return (
                       <button
@@ -152,13 +160,6 @@ export default function SetupPanel() {
                       </button>
                     );
                   })}
-                  <span
-                    className="px-3 py-1 border border-dashed border-peach bg-[#FFF2EE] text-brand-indigo rounded-full text-[11.5px] font-medium flex items-center gap-1 cursor-pointer font-sans"
-                    onClick={() => toggleSegment('Acquisition Cohort')}
-                  >
-                    <Sparkles className="h-3 w-3 text-peach" />
-                    Acquisition Cohort
-                  </span>
                 </div>
               </div>
 
@@ -169,7 +170,7 @@ export default function SetupPanel() {
                   <span className="text-[10px] text-warm-muted leading-tight block mt-0.5">Metrics to project and simulate.</span>
                 </div>
                 <div className="col-span-1 md:col-span-3 flex flex-wrap gap-1.5">
-                  {['Revenue', 'Cost Centre', 'Gross Margin', 'Units Sold', 'CAC'].map((param) => {
+                  {Array.from(new Set([...setup.parameters, 'Sales', 'Revenue', 'Gross Margin'])).map((param) => {
                     const isSel = setup.parameters.includes(param);
                     return (
                       <button
@@ -185,13 +186,6 @@ export default function SetupPanel() {
                       </button>
                     );
                   })}
-                  <span
-                    className="px-3 py-1 border border-dashed border-peach bg-[#FFF2EE] text-brand-indigo rounded-full text-[11.5px] font-medium flex items-center gap-1 cursor-pointer font-sans"
-                    onClick={() => toggleParameter('LTV / Payback')}
-                  >
-                    <Sparkles className="h-3 w-3 text-peach" />
-                    LTV / Payback
-                  </span>
                 </div>
               </div>
 
@@ -215,63 +209,68 @@ export default function SetupPanel() {
                 </span>
                 
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-start justify-between text-[12px] bg-white p-2.5 rounded-lg border border-warm-border/50">
-                    <div className="flex items-center gap-2">
-                      <div className="h-5 w-5 rounded-full bg-sage-light border border-sage-border flex items-center justify-center">
-                        <span className="text-[9px] font-bold text-sage">✓</span>
+                  {setup.sources.length > 0 ? (
+                    setup.sources.map((src, idx) => (
+                      <div key={idx} className="flex items-start justify-between text-[12px] bg-white p-2.5 rounded-lg border border-warm-border/50">
+                        <div className="flex items-center gap-2">
+                          <div className="h-5 w-5 rounded-full bg-sage-light border border-sage-border flex items-center justify-center">
+                            <span className="text-[9px] font-bold text-sage">✓</span>
+                          </div>
+                          <div>
+                            <span className="font-semibold text-warm-text block">{src.name}</span>
+                            <span className="text-[10px] text-warm-muted">{src.fields} metrics · {src.rows.toLocaleString()} records populated</span>
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded bg-sage-light text-sage border border-sage-border text-[9px] font-bold uppercase">Ready</span>
                       </div>
-                      <div>
-                        <span className="font-semibold text-warm-text block">Historical Revenue & Pricing Baseline</span>
-                        <span className="text-[10px] text-warm-muted">Provided by q2_revenue_raw.xlsx</span>
+                    ))
+                  ) : (
+                    <div className="flex items-start justify-between text-[12px] bg-[#FFF2EE] p-2.5 rounded-lg border border-peach/30">
+                      <div className="flex items-center gap-2">
+                        <div className="h-5 w-5 rounded-full bg-peach/10 border border-peach/30 flex items-center justify-center">
+                          <span className="text-[11px] font-bold text-brand-indigo">!</span>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-brand-indigo block">No Dataset File Populated</span>
+                          <span className="text-[10px] text-warm-muted">Upload CSV or Excel file to populate workspace data tables.</span>
+                        </div>
                       </div>
+                      <span className="px-2 py-0.5 rounded bg-peach-light text-brand-indigo border border-peach/20 text-[9px] font-bold uppercase">Pending</span>
                     </div>
-                    <span className="px-2 py-0.5 rounded bg-sage-light text-sage border border-sage-border text-[9px] font-bold uppercase">Ready</span>
-                  </div>
-
-                  <div className="flex items-start justify-between text-[12px] bg-white p-2.5 rounded-lg border border-warm-border/50">
-                    <div className="flex items-center gap-2">
-                      <div className="h-5 w-5 rounded-full bg-sage-light border border-sage-border flex items-center justify-center">
-                        <span className="text-[9px] font-bold text-sage">✓</span>
-                      </div>
-                      <div>
-                        <span className="font-semibold text-warm-text block">Cost Allocation Structure</span>
-                        <span className="text-[10px] text-warm-muted">Provided by cost_centre_2024.csv</span>
-                      </div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded bg-sage-light text-sage border border-sage-border text-[9px] font-bold uppercase">Ready</span>
-                  </div>
-
-                  <div className="flex items-start justify-between text-[12px] bg-white p-2.5 rounded-lg border border-warm-border/50">
-                    <div className="flex items-center gap-2">
-                      <div className="h-5 w-5 rounded-full bg-sage-light border border-sage-border flex items-center justify-center">
-                        <span className="text-[9px] font-bold text-sage">✓</span>
-                      </div>
-                      <div>
-                        <span className="font-semibold text-warm-text block">Market Segment Mapping</span>
-                        <span className="text-[10px] text-warm-muted">Provided by region_mapping.json</span>
-                      </div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded bg-sage-light text-sage border border-sage-border text-[9px] font-bold uppercase">Ready</span>
-                  </div>
-
-                  {/* Missing/Recommended Elasticity Data */}
-                  <div className="flex items-start justify-between text-[12px] bg-[#FFF2EE] p-2.5 rounded-lg border border-peach/30">
-                    <div className="flex items-center gap-2">
-                      <div className="h-5 w-5 rounded-full bg-peach/10 border border-peach/30 flex items-center justify-center">
-                        <span className="text-[11px] font-bold text-brand-indigo">!</span>
-                      </div>
-                      <div>
-                        <span className="font-semibold text-brand-indigo block">Price Elasticity Curves (.csv)</span>
-                        <span className="text-[10px] text-warm-muted">Highly recommended to enable custom churn projections.</span>
-                      </div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded bg-peach-light text-brand-indigo border border-peach/20 text-[9px] font-bold uppercase">Pending</span>
-                  </div>
+                  )}
                 </div>
 
                 <div className="text-[10.5px] text-warm-muted leading-normal mt-1 p-2.5 bg-white border border-warm-border/40 rounded-lg">
-                  💡 <strong>Simulation Advice:</strong> You can proceed without custom elasticity data. The engine will auto-apply baseline sensitivity coefficients derived from your historical renewal patterns.
+                  💡 <strong>Simulation Advice:</strong> Data uploaded to this batch is automatically populated, vectorised, and mapped to your decision model.
                 </div>
+              </div>
+
+              {/* Upload Dropzone Bar */}
+              <div className="border border-dashed border-warm-border rounded-xl bg-white p-4 flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-lavender/40 border border-lavender/50 flex items-center justify-center">
+                    <Upload className="h-4 w-4 text-brand-indigo" />
+                  </div>
+                  <div>
+                    <span className="text-[12px] font-bold text-warm-text block">Upload Dataset File</span>
+                    <span className="text-[10.5px] text-warm-muted block">
+                      `POST /optimization/data-population/upload-file` (.csv, .xlsx, .xls, .docx, .doc)
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadLoading}
+                  className="px-3.5 py-1.5 bg-brand-indigo hover:opacity-90 active:opacity-100 text-white rounded-lg text-[11.5px] font-bold shadow-sm flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50"
+                >
+                  {uploadLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="h-3.5 w-3.5" />
+                  )}
+                  {uploadLoading ? 'Uploading...' : 'Select File'}
+                </button>
               </div>
 
               {/* Active Sources List */}
@@ -308,19 +307,12 @@ export default function SetupPanel() {
 
                         {isInspected && (
                           <div className="border-t border-warm-border/40 bg-white/70 p-3.5 flex flex-col gap-2 animate-float-up">
-                            <span className="text-[10px] font-bold text-warm-muted uppercase tracking-wider block mb-1">Data Field Definitions</span>
-                            <div className="grid grid-cols-3 gap-2 text-[10px] font-mono border-b border-warm-border/30 pb-1.5 mb-1 text-warm-muted font-sans font-bold">
-                              <span>Metric Field</span>
-                              <span>Format</span>
-                              <span>Sample Record</span>
+                            <span className="text-[10px] font-bold text-warm-muted uppercase tracking-wider block mb-1">Dataset Profile</span>
+                            <div className="flex items-center gap-4 text-[11px] text-warm-text font-sans">
+                              <span><strong>Columns:</strong> {src.fields} metrics</span>
+                              <span><strong>Rows:</strong> {src.rows.toLocaleString()} records</span>
+                              <span><strong>Status:</strong> Populated & Vectorised</span>
                             </div>
-                            {tableSchemas[src.name]?.map((col, cIdx) => (
-                              <div key={cIdx} className="grid grid-cols-3 gap-2 text-[10.5px] font-mono py-1 border-b border-warm-bg/50 last:border-0 hover:bg-muted/30 px-1 rounded transition-colors font-sans">
-                                <span className="font-semibold font-mono text-warm-text">{col.col}</span>
-                                <span className="text-brand-indigo font-sans">{col.type}</span>
-                                <span className="text-warm-muted font-sans">{col.sample}</span>
-                              </div>
-                            ))}
                           </div>
                         )}
                       </div>
@@ -337,7 +329,7 @@ export default function SetupPanel() {
           <span className="text-[11px] text-warm-muted">
             {subtab === 'sources'
               ? `${setup.sources.length} baseline datasets loaded successfully`
-              : `3 baseline datasets · ${setup.segments.length + setup.parameters.length + 1} business variables configured`
+              : `${setup.sources.length} baseline datasets · ${setup.segments.length + setup.parameters.length + 1} business variables configured`
             }
           </span>
           <div className="flex items-center gap-2">
@@ -345,10 +337,34 @@ export default function SetupPanel() {
               Save Draft
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 if (subtab === 'sources') {
                   navigate('/dashboard/blueprint/general');
                 } else {
+                  // Pass configuration choices to AI agent
+                  try {
+                    const setupPrompt = `Configured simulation focus: Primary Metric: "${setup.focalPoint || 'Target Growth'}", Horizon: "${setup.timeRange || 'Quarterly'}", Segments: [${setup.segments.join(', ')}], Parameters: [${setup.parameters.join(', ')}]. ${setup.sources.length} baseline datasets loaded.`;
+                    addMessage({ role: 'user', content: setupPrompt });
+
+                    const agentRes = await api.agentChat({
+                      message: setupPrompt,
+                      batch_id: activeBatchId || '',
+                    });
+
+                    let replyContent = agentRes.reply;
+                    if (agentRes.tools_used && agentRes.tools_used.length > 0) {
+                      const formattedTools = agentRes.tools_used.map((t: string) => {
+                        const clean = t.replace(/_/g, ' ');
+                        return clean.charAt(0).toUpperCase() + clean.slice(1);
+                      });
+                      replyContent += `\n\n*Executed:* \`${formattedTools.join('`, `')}\``;
+                    }
+
+                    addMessage({ role: 'ai', content: replyContent });
+                  } catch (err) {
+                    console.warn('Agent setup message notice:', err);
+                  }
+
                   navigate('/dashboard/ecr-build');
                 }
               }}

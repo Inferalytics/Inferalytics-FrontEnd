@@ -5,8 +5,48 @@ import SignInPage from './pages/SignInPage';
 import SignUpPage from './pages/SignUpPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import DashboardPage from './pages/DashboardPage';
+import { setClerkTokenFetcher } from './api/axiosClient';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || 'pk_test_bW9jay1jbGVyay1rZXktMTAwLmNsZXJrLmFjY291bnRzLmRldiQ';
+
+import api from './api';
+
+const STORAGE_KEY = 'ips_api_key';
+
+function ClerkTokenBridge() {
+  const { getToken, isSignedIn } = useAuth();
+
+  React.useEffect(() => {
+    setClerkTokenFetcher((options) => getToken(options));
+  }, [getToken]);
+
+  // Exchange Clerk JWT for long-lived backend API key on login if not already stored
+  React.useEffect(() => {
+    if (!isSignedIn) {
+      localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+
+    if (localStorage.getItem(STORAGE_KEY)) return;
+
+    void (async () => {
+      try {
+        const jwt = await getToken({ skipCache: true });
+        if (!jwt) return;
+        const res = await api.exchangeToken('web-app', jwt);
+        if (res?.access_token) {
+          localStorage.setItem(STORAGE_KEY, res.access_token);
+        }
+      } catch (e) {
+        // Clear any bad key to ensure clean fallback to standard Clerk JWT header
+        localStorage.removeItem(STORAGE_KEY);
+        console.warn('API key exchange notice (falling back to Clerk JWT):', e);
+      }
+    })();
+  }, [isSignedIn, getToken]);
+
+  return null;
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
@@ -25,6 +65,7 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
+      <ClerkTokenBridge />
       <BrowserRouter>
         <Routes>
           <Route path="/"        element={<GuestRoute><SignInPage /></GuestRoute>} />

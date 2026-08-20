@@ -6,43 +6,47 @@ import { directBezier } from './bezierUtils';
 
 const CARD_W = 210;
 
-const DIMENSIONS = [
-  { id: 'qtr',  name: 'Quarter',      type: 'date',        samples: ['Q1 2025', 'Q2 2025', 'Q3 2025'],   status: 'ok'   },
-  { id: 'rev',  name: 'Revenue',       type: 'numeric',     samples: ['$1.24M', '$980K', '$2.10M'],       status: 'ok',  active: true },
-  { id: 'reg',  name: 'Region',        type: 'categorical', samples: ['EMEA', 'APAC', 'NA-East'],         status: 'ok'   },
-  { id: 'prod', name: 'Product Line',  type: 'categorical', samples: ['Enterprise', 'SMB', 'Self-serve'], status: 'busy' },
-] as const;
-
 const CARD_H     = 132;
 const GAP        = 28;
 const TOP_OFFSET = 12;
 
-const ECR_ASSETS = [
-  { id: 'ontology', name: 'Decision Ontology', desc: 'Ontological tags & vocabulary', details: 'Core entity definitions: Quarter (temporal dimension), Revenue (financial outcome target), Region (geographic dimension), and Product Line (segmentation factor). Mapped to enterprise schema.' },
-  { id: 'network', name: 'Relationship Network', desc: 'Active node connectivity map', details: 'Defined links: Quarter ➔ Revenue (time series), Region ↔ Revenue (geographic correlation), Product Line ➔ Cost Centre (allocation rule), Cost Centre ↔ Gross Margin (derived ratio).' },
-  { id: 'rules', name: 'Business Rules', desc: 'System constraints & bounds', details: 'Hard Constraints: Customer renewal churn must remain ≤ 6.0% post price adjustments. Soft Constraints: Cost centre budget variance must not exceed ±10%.' },
-  { id: 'model', name: 'Data Model', desc: 'Underlying spreadsheet files', details: 'Spreadsheets linked: q2_revenue_raw.xlsx (18 fields, 4,210 rows), cost_centre_2024.csv (9 fields, 1,802 rows), and region_mapping.json (6 fields, 142 rows).' },
-  { id: 'history', name: 'Decision History', desc: 'Past strategic outcomes', details: 'Reference cohort: 5% uniform price increase executed 18 months ago. Results: 3.8% peak churn, +4.2% net ARR change. Used as model priors.' },
-  { id: 'sim_history', name: 'Simulation History', desc: 'Active scenarios configurations', details: 'Configured projections: Scenario A (Baseline 8% YoY revenue growth), Scenario B (Optimised Newton-Raphson 18% uplift + 6% Cost Centre reduction).' },
-  { id: 'expert', name: 'Expert Knowledge', desc: 'Human-anchored constraints', details: 'Static anchors: Region multipliers and Gross Margin ratios pinned to static Q3 parameters based on CFO directives.' },
-  { id: 'confidence', name: 'Confidence Scores', desc: 'AI confidence ratings', details: 'Confidence indices: Ontology parsing (98%), Relationship correlation (92%), Churn predictive fit (94%). Composite ECR confidence score: 94.6%.' },
-  { id: 'behavior', name: 'Learned Behaviors', desc: 'Elasticities & agent curves', details: 'Segment parameters: Calculated Enterprise price elasticity coefficient of -1.45. Churn curve escalates exponentially when price change exceeds 10%.' },
-  { id: 'causal', name: 'Causal Relationships', desc: 'Optimisation impact paths', details: 'Causality stream: Strategic Price uplift % ➔ Segment Renewal Churn ➔ Operating Margin expansion ➔ Net EGR Achieved.' }
-];
-
-const INITIAL_POS = DIMENSIONS.map((_, i) => ({
-  x: 0,
-  y: TOP_OFFSET + i * (CARD_H + GAP),
-}));
-
 interface Line { x1: number; y1: number; x2: number; y2: number }
 
 export default function BuildPanel() {
-  const { relationships, toggleRelationshipConfirmed, growthRates } = useStore();
+  const { relationships, toggleRelationshipConfirmed, growthRates, setup, scenarios } = useStore();
   const navigate = useNavigate();
 
-  const [selectedId, setSelectedId]   = useState<string>('rev');
-  const [positions,  setPositions]    = useState(INITIAL_POS);
+  // Real dimensions derived from the actual uploaded batch's parameters/segments
+  const DIMENSIONS = React.useMemo(() => {
+    const items: { id: string; name: string; type: 'numeric' | 'categorical' | 'date'; samples: string[]; status: 'ok' | 'busy' }[] = [
+      { id: 'qtr', name: setup.timeGranularity || 'Quarter', type: 'date', samples: [], status: 'ok' },
+    ];
+    setup.parameters.forEach((param, pIdx) => {
+      items.push({ id: `param-${pIdx}`, name: param, type: 'numeric', samples: [], status: 'ok' });
+    });
+    setup.segments.forEach((seg, sIdx) => {
+      items.push({ id: `seg-${sIdx}`, name: seg, type: 'categorical', samples: [], status: 'ok' });
+    });
+    return items;
+  }, [setup.timeGranularity, setup.parameters, setup.segments]);
+
+  const ecrAssets: { id: string; name: string; desc: string; details: string }[] = React.useMemo(() => [
+    ...(setup.sources.length > 0 ? [{
+      id: 'model',
+      name: 'Data Model',
+      desc: 'Underlying uploaded files',
+      details: setup.sources.map(s => `${s.name} (${s.fields} fields, ${s.rows.toLocaleString()} rows)`).join('; '),
+    }] : []),
+    ...(scenarios.length > 0 ? [{
+      id: 'sim_history',
+      name: 'Simulation History',
+      desc: 'Scenario runs for this batch',
+      details: scenarios.map(s => `${s.label}: revenue ${s.revenue}, EGR ${s.egr}`).join('; '),
+    }] : []),
+  ], [setup.sources, scenarios]);
+
+  const [selectedId, setSelectedId]   = useState<string>('');
+  const [positions,  setPositions]    = useState<{ x: number; y: number }[]>([]);
   const [lines,      setLines]        = useState<Line[]>([]);
   const [drag, setDrag] = useState<{ idx: number; ox: number; oy: number } | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -52,6 +56,13 @@ export default function BuildPanel() {
   const rightColRef = useRef<HTMLDivElement>(null);
   const rowRefs     = useRef<(HTMLTableRowElement | null)[]>([]);
 
+  // Resync layout state whenever the real dimension count changes
+  useEffect(() => {
+    setPositions(DIMENSIONS.map((_, i) => ({ x: 0, y: TOP_OFFSET + i * (CARD_H + GAP) })));
+    setSelectedId(prev => (DIMENSIONS.some(d => d.id === prev) ? prev : (DIMENSIONS[0]?.id ?? '')));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [DIMENSIONS.length]);
+
   // ── Measure SVG lines from card right-edge → row centre ──────────────────
   const measureLines = useCallback(() => {
     if (!canvasRef.current || !rightColRef.current) return;
@@ -60,6 +71,7 @@ export default function BuildPanel() {
 
     const next: Line[] = DIMENSIONS.map((_, i) => {
       const pos  = positions[i];
+      if (!pos) return { x1: 0, y1: 0, x2: rightX, y2: 0 };
       const x1   = pos.x + CARD_W;
       const y1   = pos.y + CARD_H / 2;
 
@@ -193,6 +205,7 @@ export default function BuildPanel() {
           {DIMENSIONS.map((d, i) => {
             const isSelected = d.id === selectedId;
             const pos = positions[i];
+            if (!pos) return null;
             return (
               <div
                 key={d.id}
@@ -247,7 +260,7 @@ export default function BuildPanel() {
                 <Sparkles className="h-4 w-4 text-brand-indigo" />
                 <span className="text-[12.5px] font-bold text-warm-text">Pre-calculated Growth Rates</span>
               </div>
-              <span className="text-[9.5px] font-mono text-warm-muted">auto-generated · refreshed 12:08</span>
+              <span className="text-[9.5px] font-mono text-warm-muted">from uploaded batch data</span>
             </div>
 
             <table className="w-full text-left border-collapse text-[11.5px] font-mono">
@@ -282,7 +295,7 @@ export default function BuildPanel() {
             </table>
 
             <div className="px-4 py-2.5 bg-warm-bg/30 border-t border-warm-border/60 flex items-center justify-between text-[10.5px]">
-              <span className="text-warm-muted">Baseline growth · 5 of 12 segments shown</span>
+              <span className="text-warm-muted">Baseline growth · {growthRates.length} segment{growthRates.length === 1 ? '' : 's'} shown</span>
               <span className="text-brand-indigo font-sans font-semibold hover:underline cursor-pointer">Expand all →</span>
             </div>
           </div>
@@ -291,10 +304,15 @@ export default function BuildPanel() {
           <div className="bg-white border border-warm-border rounded-2xl shadow-card overflow-hidden font-sans">
             <div className="px-4 py-3 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/25 flex items-center justify-between">
               <span className="text-[12.5px] font-bold text-warm-text">ECR World Model Assets</span>
-              <span className="text-[9.5px] font-mono text-brand-indigo bg-lavender/30 px-2.5 py-0.5 rounded-full font-bold">10 active layers</span>
+              <span className="text-[9.5px] font-mono text-brand-indigo bg-lavender/30 px-2.5 py-0.5 rounded-full font-bold">{ecrAssets.length} active</span>
             </div>
             <div className="p-3 flex flex-col gap-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-              {ECR_ASSETS.map((asset) => {
+              {ecrAssets.length === 0 && (
+                <div className="text-[10.5px] text-warm-muted italic p-3 border border-dashed border-warm-border rounded-xl text-center">
+                  No ECR assets yet. Upload data to populate the Data Model.
+                </div>
+              )}
+              {ecrAssets.map((asset) => {
                 const isExpanded = expandedEcrAsset === asset.id;
                 return (
                   <div key={asset.id} className="flex flex-col border border-warm-border/50 rounded-xl bg-warm-bg/20 overflow-hidden transition-all duration-200 shrink-0">
@@ -325,9 +343,14 @@ export default function BuildPanel() {
           <div className="bg-white border border-warm-border rounded-2xl shadow-card overflow-hidden font-sans">
             <div className="px-4 py-3 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/25 flex items-center justify-between">
               <span className="text-[12.5px] font-bold text-warm-text">Drafted Relationships</span>
-              <span className="text-[9.5px] font-mono text-warm-muted">4 connections · confirm to lock</span>
+              <span className="text-[9.5px] font-mono text-warm-muted">{relationships.length} connection{relationships.length === 1 ? '' : 's'} · confirm to lock</span>
             </div>
             <div className="p-3 grid grid-cols-2 gap-2">
+              {relationships.length === 0 && (
+                <div className="col-span-2 text-[10.5px] text-warm-muted italic p-3 border border-dashed border-warm-border rounded-xl text-center">
+                  No relationships drafted yet.
+                </div>
+              )}
               {relationships.map((rel, ri) => (
                 <div key={ri} className="flex items-start gap-2 p-2.5 rounded-xl bg-warm-bg/40 border border-warm-border/60 hover:bg-white transition-colors">
                   <input

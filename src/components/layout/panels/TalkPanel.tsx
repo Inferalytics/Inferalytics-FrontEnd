@@ -1,16 +1,66 @@
-import React, { useState, useEffect } from 'react';
-import { Sparkles, ArrowRight, Check, Paperclip, Send } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Sparkles, ArrowRight, Check, Paperclip, Send, Loader2, Plus, ChevronDown } from 'lucide-react';
+import { useUser } from '@clerk/clerk-react';
 import { useStore } from '../../../store/useStore';
 import { useNavigate } from 'react-router-dom';
+import api from '../../../api';
+import type { ConversationTurn } from '../../../types/api';
+import { getRouteForTools } from '../../../lib/agentNavigation';
 
 const renderFormattedText = (content: string) => {
-  if (!content) return '';
-  const parts = content.split('**');
-  return parts.map((part, index) => {
-    if (index % 2 === 1) {
-      return <strong key={index} className="font-bold text-warm-text">{part}</strong>;
+  if (!content) return null;
+  const lines = content.split('\n');
+
+  return lines.map((line, lIdx) => {
+    const processInline = (text: string) => {
+      const boldParts = text.split(/\*\*(.*?)\*\*/g);
+      return boldParts.map((bPart, bIdx) => {
+        if (bIdx % 2 === 1) {
+          return <strong key={`b-${bIdx}`} className="font-bold text-warm-text">{bPart}</strong>;
+        }
+
+        const codeParts = bPart.split(/`(.*?)`/g);
+        return codeParts.map((cPart, cIdx) => {
+          if (cIdx % 2 === 1) {
+            return (
+              <code key={`c-${cIdx}`} className="px-1.5 py-0.5 mx-0.5 rounded bg-warm-bg border border-warm-border text-[11px] font-mono text-brand-indigo font-semibold">
+                {cPart}
+              </code>
+            );
+          }
+
+          const italicParts = cPart.split(/\*(.*?)\*/g);
+          return italicParts.map((iPart, iIdx) => {
+            if (iIdx % 2 === 1) {
+              return <em key={`i-${iIdx}`} className="italic text-warm-text/90">{iPart}</em>;
+            }
+            return iPart;
+          });
+        });
+      });
+    };
+
+    const trimmed = line.trim();
+    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      return (
+        <div key={lIdx} className="flex items-start gap-2 my-0.5 pl-1">
+          <span className="text-brand-indigo font-bold select-none text-[12px] leading-tight">•</span>
+          <div className="flex-1 text-[12.5px] leading-relaxed text-warm-text/90">
+            {processInline(trimmed.slice(2))}
+          </div>
+        </div>
+      );
     }
-    return part;
+
+    if (!trimmed) {
+      return <div key={lIdx} className="h-1.5" />;
+    }
+
+    return (
+      <div key={lIdx} className="text-[12.5px] leading-relaxed">
+        {processInline(line)}
+      </div>
+    );
   });
 };
 
@@ -19,15 +69,52 @@ interface TalkPanelProps {
 }
 
 export default function TalkPanel({ triggerToast }: TalkPanelProps) {
-  const { setScreen } = useStore();
+  const { user } = useUser();
+  const displayName = user?.fullName || user?.firstName || user?.primaryEmailAddress?.emailAddress || 'User';
+  const firstName = user?.firstName || displayName.split(' ')[0] || 'there';
+
+  const { setScreen, syncBackendState, createBatchApi, batches, activeBatchId, switchBatchApi, setActiveBatch } = useStore();
   const navigate = useNavigate();
+
+  const [isBatchDropdownOpen, setIsBatchDropdownOpen] = useState(false);
 
   const [talkAnimationPhase, setTalkAnimationPhase] = useState<'center' | 'sliding' | 'unfolding' | 'ready'>(() => {
     return sessionStorage.getItem('has_seen_talk_intro') === 'true' ? 'ready' : 'center';
   });
   const [talkMessages, setTalkMessages] = useState<{ sender: 'ai' | 'user'; text: string }[]>([]);
   const [talkInputText, setTalkInputText] = useState('');
+  const [chatBatchId, setChatBatchId] = useState<string | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [isCreatingBatch, setIsCreatingBatch] = useState(false);
   const chatEndRef = React.useRef<HTMLDivElement>(null);
+  const historyRef = useRef<ConversationTurn[]>([]);
+
+  const handleCreateBatchAndNext = async () => {
+    const defaultName = `Batch ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const batchName = window.prompt('Enter name for the new batch:', defaultName);
+    if (!batchName) return;
+
+    try {
+      setIsCreatingBatch(true);
+      triggerToast('Creating new batch...');
+      if (createBatchApi) {
+        const newBatchId = await createBatchApi(batchName);
+        setChatBatchId(newBatchId);
+      } else {
+        const res = await api.createBatch(batchName);
+        const newBatchId = res.data.batch_id;
+        await api.switchBatch(newBatchId);
+        setChatBatchId(newBatchId);
+      }
+      triggerToast(`Batch "${batchName}" created! Moving to Blueprint...`);
+      navigate('/dashboard/blueprint/general');
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || err?.message || 'Failed to create batch';
+      triggerToast(`Error: ${detail}`);
+    } finally {
+      setIsCreatingBatch(false);
+    }
+  };
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -57,52 +144,98 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
     };
   }, []);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const ensureChatBatch = async (): Promise<string> => {
+    if (chatBatchId) return chatBatchId;
+    const res = await api.createBatch(`Conversation ${new Date().toLocaleString()}`);
+    const id = res.data.batch_id;
+    setChatBatchId(id);
+    return id;
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setChatLoading(true);
+    triggerToast(`Uploading ${file.name}...`);
+
+    try {
+      await ensureChatBatch();
+      const res = await api.uploadFile(file);
+      triggerToast(`File uploaded: ${res.data.file_name} (${res.data.row_count} rows, ${res.data.column_count} cols)`);
+      if (syncBackendState) {
+        void syncBackendState();
+      }
+      void sendMessage(`I uploaded ${res.data.file_name}. Run the pipeline and optimize for 12% growth.`);
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || err?.message || 'File upload failed';
+      triggerToast(`Upload error: ${detail}`);
+    } finally {
+      setChatLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const sendMessage = async (userMsg: string) => {
+    setTalkMessages(prev => [...prev, { sender: 'user', text: userMsg }]);
+    setChatLoading(true);
+
+    try {
+      const batchId = await ensureChatBatch();
+      const res = await api.agentChat({
+        message: userMsg,
+        batch_id: batchId,
+        conversation_history: historyRef.current,
+      });
+
+      historyRef.current = [
+        ...historyRef.current,
+        { role: 'user', content: userMsg },
+        { role: 'assistant', content: res.reply },
+      ];
+
+      let replyText = res.reply;
+      if (res.tools_used && res.tools_used.length > 0) {
+        const formattedTools = res.tools_used.map(t => {
+          const clean = t.replace(/_/g, ' ');
+          return clean.charAt(0).toUpperCase() + clean.slice(1);
+        });
+        replyText += `\n\n*Executed:* \`${formattedTools.join('`, `')}\``;
+      }
+
+      setTalkMessages(prev => [...prev, { sender: 'ai', text: replyText }]);
+      if (res.error) {
+        triggerToast(`Agent warning: ${res.error}`);
+      }
+
+      if (syncBackendState) {
+        await syncBackendState();
+      }
+
+      const route = getRouteForTools(res.tools_used);
+      if (route) navigate(route);
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || err?.message || 'Something went wrong. Please try again.';
+      setTalkMessages(prev => [...prev, { sender: 'ai', text: `Error: ${detail}` }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   const handleSendTalkMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!talkInputText.trim()) return;
+    if (!talkInputText.trim() || chatLoading) return;
 
     const userMsg = talkInputText.trim();
     setTalkInputText('');
-    setTalkMessages(prev => [...prev, { sender: 'user', text: userMsg }]);
-
-    const userMsgLower = userMsg.toLowerCase();
-    if (
-      userMsgLower.includes('build model') ||
-      userMsgLower.includes('build now') ||
-      userMsgLower.includes('build') ||
-      userMsgLower.includes('proceed') ||
-      userMsgLower.includes('start setup') ||
-      userMsgLower.includes('start build')
-    ) {
-      triggerToast('Initializing ECR Model Configuration...');
-      setTimeout(() => {
-        navigate('/dashboard/blueprint/general');
-      }, 800);
-      return;
-    }
-
-    setTimeout(() => {
-      setTalkMessages(prev => [
-        ...prev,
-        {
-          sender: 'ai',
-          text: `Got it. Structuring a growth simulation for your scenario: "${userMsg}". I will map these options across customer segments and project retention impacts.`
-        }
-      ]);
-    }, 1200);
+    void sendMessage(userMsg);
   };
 
   const handleSuggestionClick = (text: string) => {
-    setTalkMessages(prev => [...prev, { sender: 'user', text }]);
-    setTimeout(() => {
-      setTalkMessages(prev => [
-        ...prev,
-        {
-          sender: 'ai',
-          text: `Understood. Analyzing "${text}" strategies. Mapping price elasticity curves to project revenue and churn tradeoffs.`
-        }
-      ]);
-    }, 1200);
+    if (chatLoading) return;
+    void sendMessage(text);
   };
 
   return (
@@ -168,25 +301,81 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
             : 'w-full max-w-4xl opacity-0 max-h-0 scale-[0.97] translate-y-8 border-transparent p-0 gap-0 overflow-hidden pointer-events-none invisible'
         }`}
       >
-        {/* Card Header with Stepper */}
+        {/* Card Header with Stepper & Action */}
         {(talkAnimationPhase === 'unfolding' || talkAnimationPhase === 'ready') && (
           <div className="border-b border-warm-border pb-3 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0 select-none">
             <div className="flex items-center gap-2">
               <span className="text-[12px] font-bold text-warm-text">Decision Blueprint Flow</span>
               <span className="px-1.5 py-0.5 rounded bg-peach-light text-brand-indigo font-bold text-[9px] tracking-wider uppercase border border-peach/20">Active</span>
             </div>
-            <div className="flex items-center gap-2 text-[10.5px] text-warm-muted">
-              <span className="flex items-center gap-1 font-bold text-sage">
-                <Check className="h-3.5 w-3.5" /> Conversation
-              </span>
-              <span className="text-warm-border">/</span>
-              <span className="flex items-center gap-1 font-bold text-sage">
-                <Check className="h-3.5 w-3.5" /> Blueprint
-              </span>
-              <span className="text-warm-border">/</span>
-              <span className="text-brand-indigo font-extrabold bg-peach-light px-2 py-0.5 rounded animate-pulse">
-                ECR Simulation
-              </span>
+            <div className="flex items-center gap-3">
+              {/* Active Batch Selector Dropdown */}
+              {batches.length > 0 && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsBatchDropdownOpen(prev => !prev)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-warm-bg/70 hover:bg-warm-bg border border-warm-border text-[11px] font-semibold text-warm-text transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-brand-indigo animate-pulse"></span>
+                    <span className="max-w-[140px] sm:max-w-[180px] truncate">
+                      {batches.find(b => b.id === activeBatchId)?.name || batches[0]?.name || 'Select Batch'}
+                    </span>
+                    <ChevronDown className="h-3 w-3 text-warm-muted" />
+                  </button>
+
+                  {isBatchDropdownOpen && (
+                    <div className="absolute top-8 right-0 sm:left-0 w-56 rounded-xl bg-white border border-warm-border shadow-lg p-1.5 z-50 animate-float-up">
+                      <div className="px-2 py-1 text-[9px] font-bold text-warm-muted uppercase tracking-wider border-b border-warm-border/40 pb-1 mb-1">
+                        Select Existing Batch ({batches.length})
+                      </div>
+                      <div className="max-h-40 overflow-y-auto custom-scrollbar flex flex-col gap-0.5">
+                        {batches.map(b => (
+                          <button
+                            key={b.id}
+                            type="button"
+                            onClick={async () => {
+                              setIsBatchDropdownOpen(false);
+                              if (switchBatchApi) {
+                                await switchBatchApi(b.id);
+                              } else {
+                                setActiveBatch(b.id);
+                              }
+                              setChatBatchId(b.id);
+                              triggerToast(`Switched to batch "${b.name}"! Moving to Blueprint...`);
+                              navigate('/dashboard/blueprint/general');
+                            }}
+                            className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11.5px] flex items-center justify-between transition-colors cursor-pointer ${
+                              b.id === activeBatchId
+                                ? 'bg-peach/10 text-brand-indigo font-bold'
+                                : 'hover:bg-warm-bg text-warm-text'
+                            }`}
+                          >
+                            <span className="truncate">{b.name}</span>
+                            {b.id === activeBatchId && (
+                              <Check className="h-3 w-3 text-brand-indigo shrink-0" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="hidden md:flex items-center gap-2 text-[10.5px] text-warm-muted">
+                <span className="flex items-center gap-1 font-bold text-sage">
+                  <Check className="h-3.5 w-3.5" /> Conversation
+                </span>
+                <span className="text-warm-border">/</span>
+                <span className="flex items-center gap-1 font-bold text-sage">
+                  <Check className="h-3.5 w-3.5" /> Blueprint
+                </span>
+                <span className="text-warm-border">/</span>
+                <span className="text-brand-indigo font-extrabold bg-peach-light px-2 py-0.5 rounded animate-pulse">
+                  ECR Simulation
+                </span>
+              </div>
             </div>
           </div>
         )}
@@ -200,7 +389,7 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
             <div className="flex flex-col gap-1.5">
               <span className="text-[11px] font-semibold text-brand-indigo uppercase tracking-wider">Inferalytics AI</span>
               <div className="text-[13px] text-warm-text leading-relaxed bg-warm-bg/50 p-3.5 rounded-2xl rounded-tl-sm border border-warm-border/50">
-                Hi Robert. I'm here to help you design a business case and simulation model. We can explore your strategic goals first — once we map out your core business drivers, I'll recommend the exact data needed to simulate your scenarios.
+                Hi {firstName}. I'm here to help you design a business case and simulation model. We can explore your strategic goals first — once we map out your core business drivers, I'll recommend the exact data needed to simulate your scenarios.
                 <div className="mt-2 font-semibold">Select a scenario to start, or describe your goals in your own words:</div>
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {['I want to raise prices', 'Hit a growth target next year', 'Reduce operating costs', 'Reallocate marketing spend', 'Optimize tier packaging'].map((s) => (
@@ -212,64 +401,6 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
                       {s}
                     </span>
                   ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Preset user bubble */}
-          <div className="flex gap-3 self-end justify-end max-w-[85%]">
-            <div className="flex flex-col gap-1 text-right items-end">
-              <span className="text-[11px] font-semibold text-warm-text uppercase tracking-wider">Robert M.</span>
-              <div className="text-[13px] text-brand-indigo leading-relaxed bg-lavender/20 p-3.5 rounded-2xl rounded-tr-sm border border-lavender/40 text-left">
-                We're thinking about raising prices on our Enterprise tier by 8–12% next quarter. I want to understand the trade-off between revenue uplift and churn risk before we commit.
-              </div>
-            </div>
-          </div>
-
-          {/* Decision frame summary */}
-          <div className="flex gap-3 pt-3 border-t border-warm-border/60">
-            <div className="h-7 w-7 rounded-full bg-lavender flex items-center justify-center shrink-0 border border-warm-border">
-              <Sparkles className="h-3.5 w-3.5 text-brand-indigo" />
-            </div>
-            <div className="flex flex-col gap-1.5 w-full">
-              <span className="text-[11px] font-semibold text-brand-indigo uppercase tracking-wider">Inferalytics AI</span>
-              <div 
-                onClick={() => navigate('/dashboard/blueprint/general')}
-                className="text-[13px] text-warm-text leading-relaxed bg-warm-bg/50 hover:bg-lavender/10 hover:border-brand-indigo/40 p-3.5 rounded-2xl rounded-tl-sm border border-warm-border/50 w-full flex flex-col gap-3 cursor-pointer transition-all duration-200 group shadow-sm hover:shadow-md"
-              >
-                <div>Excellent. Decision Blueprint generated. Here is the ECR (Enterprise Computational Representation) structure we will configure:</div>
-                <div className="border border-warm-border rounded-xl bg-white p-3 text-[12px] flex flex-col gap-1.5 shadow-sm group-hover:border-brand-indigo/20 transition-colors">
-                  {[
-                    { label: 'Strategic Decision', value: 'Evaluate Enterprise tier price change for next FY' },
-                    { label: 'Business Goal', value: 'Maximize net revenue with churn risk ceiling under 6%' },
-                    { label: 'Growth Levers', value: 'Enterprise pricing adjustments and tier eligibility options' },
-                    { label: 'Market Segments', value: 'Customer tiers, contract values (ARR), geography, and timing' },
-                    { label: 'Historical Baseline', value: 'Historical purchase patterns, customer retention rates, and usage metrics' },
-                    { label: 'ECR Simulation Engine', value: 'Sensitivity forecasting using price-elasticity modeling' }
-                  ].map((row, i, arr) => (
-                    <div key={row.label} className={`flex flex-col sm:flex-row sm:justify-between gap-0.5 sm:gap-4 ${i < arr.length - 1 ? 'border-b border-warm-bg pb-1.5' : ''}`}>
-                      <span className="text-warm-muted font-medium text-[11px] sm:text-[11.5px]">{row.label}</span>
-                      <span className="font-semibold text-warm-text sm:text-right text-[12px] group-hover:text-brand-indigo transition-colors">{row.value}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="p-3 bg-sage-light border border-sage-border rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-sm group-hover:bg-sage-light/70 transition-colors">
-                  <div className="flex items-center gap-2">
-                    <div className="h-6 w-6 rounded-full bg-sage/20 flex items-center justify-center border border-sage-border shrink-0">
-                      <Check className="h-3 w-3 text-sage" />
-                    </div>
-                    <span className="text-[12px] font-medium text-warm-text">
-                      <strong>Decision Blueprint finalized.</strong> 3 baseline sources matched to ECR variables.
-                    </span>
-                  </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); navigate('/dashboard/blueprint/general'); }}
-                    className="py-1.5 px-3.5 bg-sage hover:bg-sage/90 text-white rounded-lg text-[11.5px] font-bold shadow-sm transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-                  >
-                    Build ECR Model
-                    <ArrowRight className="h-3 w-3 transform group-hover:translate-x-0.5 transition-transform" />
-                  </button>
                 </div>
               </div>
             </div>
@@ -295,7 +426,7 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
                 </>
               ) : (
                 <div className="flex flex-col gap-1 text-right items-end">
-                  <span className="text-[11px] font-semibold text-warm-text uppercase tracking-wider">Robert M.</span>
+                  <span className="text-[11px] font-semibold text-warm-text uppercase tracking-wider">{displayName}</span>
                   <div className="text-[13px] text-brand-indigo leading-relaxed bg-lavender/20 p-3.5 rounded-2xl rounded-tr-sm border border-lavender/40 text-left">
                     {renderFormattedText(msg.text)}
                   </div>
@@ -306,16 +437,25 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
           <div ref={chatEndRef} />
         </div>
 
+        {/* Hidden file input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+          accept=".csv,.xlsx,.xls,.docx,.doc,.json"
+          className="hidden"
+        />
+
         {/* Input bar */}
         <form
           onSubmit={handleSendTalkMessage}
-          className="mt-1 border-t border-warm-border/60 pt-3 flex items-center gap-3 w-full shrink-0"
+          className="mt-1 border-t border-warm-border/60 pt-3 flex items-center gap-2 sm:gap-3 w-full shrink-0"
         >
           <button
             type="button"
-            onClick={() => triggerToast('Spreadsheet attached. Scanning data columns...')}
+            onClick={() => fileInputRef.current?.click()}
             className="h-8.5 w-8.5 rounded-xl bg-warm-bg hover:bg-secondary border border-warm-border flex items-center justify-center text-warm-muted hover:text-warm-text transition-colors cursor-pointer shrink-0"
-            title="Attach spreadsheet / document"
+            title="Attach CSV, Excel, or Word file"
           >
             <Paperclip className="h-3.5 w-3.5 shrink-0" />
           </button>
@@ -330,16 +470,37 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
             />
             <button
               type="submit"
-              disabled={!talkInputText.trim()}
+              disabled={!talkInputText.trim() || chatLoading}
               className={`absolute right-1 top-1 h-6.5 w-6.5 rounded-lg flex items-center justify-center transition-all ${
-                talkInputText.trim()
+                talkInputText.trim() && !chatLoading
                   ? 'bg-brand-indigo text-white hover:opacity-90 cursor-pointer'
                   : 'bg-transparent text-warm-muted pointer-events-none'
               }`}
             >
-              <Send className="h-3 w-3 shrink-0" />
+              {chatLoading ? (
+                <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+              ) : (
+                <Send className="h-3 w-3 shrink-0" />
+              )}
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={handleCreateBatchAndNext}
+            disabled={isCreatingBatch}
+            className="h-8.5 px-3 bg-brand-indigo hover:bg-brand-indigo/90 text-white rounded-xl text-[11.5px] font-bold shadow-sm transition-all cursor-pointer flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+            title="Create a new batch workspace and proceed to 02 Blueprint"
+          >
+            {isCreatingBatch ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+            )}
+            <span className="hidden sm:inline">Create Batch & Next</span>
+            <span className="sm:hidden">New Batch</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
         </form>
       </div>
     </div>

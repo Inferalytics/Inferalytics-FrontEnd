@@ -15,85 +15,6 @@ const renderFormattedText = (content: string) => {
   });
 };
 
-const METRIC_PROVENANCE_INFO: Record<string, {
-  source: string;
-  formula: string;
-  accuracy: string;
-  method: string;
-  link: string;
-}> = {
-  'revenue': {
-    source: 'q2_revenue_raw.xlsx (Enterprise Tier ARR)',
-    formula: 'optimized_revenue = base_arr * (1 + delta_price) * (1 - elastic_churn)',
-    accuracy: 'Newton-Raphson Convergence within Epsilon = 1e-6 (99.8% precision)',
-    method: 'IPS Inference Solver (Gradient-based Optimization)',
-    link: '/dashboard/ips-engine'
-  },
-  'revenue outcome': {
-    source: 'q2_revenue_raw.xlsx (Enterprise Tier ARR)',
-    formula: 'optimized_revenue = base_arr * (1 + delta_price) * (1 - elastic_churn)',
-    accuracy: 'Newton-Raphson Convergence within Epsilon = 1e-6 (99.8% precision)',
-    method: 'IPS Inference Solver (Gradient-based Optimization)',
-    link: '/dashboard/ips-engine'
-  },
-  'cost centre': {
-    source: 'cost_centre_2024.csv (Budget Allocations)',
-    formula: 'optimized_cost = base_allocation * (1 - cost_reduction_coefficient)',
-    accuracy: 'Departmental budget variance mapping, deviation limit <= 10%',
-    method: 'IPS Optimization (Newton-Raphson linear constraints)',
-    link: '/dashboard/ips-engine'
-  },
-  'cost allocation': {
-    source: 'cost_centre_2024.csv (Budget Allocations)',
-    formula: 'optimized_cost = base_allocation * (1 - cost_reduction_coefficient)',
-    accuracy: 'Departmental budget variance mapping, deviation limit <= 10%',
-    method: 'IPS Optimization (Newton-Raphson linear constraints)',
-    link: '/dashboard/ips-engine'
-  },
-  'gross margin': {
-    source: 'region_mapping.json & cost_centre_2024.csv',
-    formula: 'gross_margin = (revenue_outcome - cost_allocation) / revenue_outcome',
-    accuracy: 'Derived ratio calculation (100% deterministic arithmetic)',
-    method: 'ECR Algebraic Representation',
-    link: '/dashboard/blueprint/general'
-  },
-  'churn rate': {
-    source: 'q2_revenue_raw.xlsx (Historical Renewal Cohorts)',
-    formula: 'predicted_churn = base_churn_rate * (delta_price * sensitivity_multiplier)',
-    accuracy: 'Elasticity log-regression curve fit (94% predictive historical matching)',
-    method: 'IPS Predictive Simulation Model',
-    link: '/dashboard/blueprint/general'
-  },
-  'egr achieved': {
-    source: 'Model Convergence (Composite target output)',
-    formula: 'EGR = compounded_quarterly_growth_rate(Quarterly_Balances)',
-    accuracy: 'Optimization convergence achieved in 1200ms (13.2% vs 12% target)',
-    method: 'IPS Newton-Raphson Solver Output',
-    link: '/dashboard/ips-engine'
-  },
-  'egr performance': {
-    source: 'Model Convergence (Composite target output)',
-    formula: 'EGR = compounded_quarterly_growth_rate(Quarterly_Balances)',
-    accuracy: 'Optimization convergence achieved in 1200ms (13.2% vs 12% target)',
-    method: 'IPS Newton-Raphson Solver Output',
-    link: '/dashboard/ips-engine'
-  },
-  'forecasted egr': {
-    source: 'Model Projections (Scenario Comparison)',
-    formula: 'delta_EGR = Scenario_B_EGR - Scenario_A_EGR (+1.4pp)',
-    accuracy: 'Run comparative time-series projections',
-    method: 'IPS Prediction comparison',
-    link: '/dashboard/ips-engine'
-  },
-  'egr gap vs target': {
-    source: 'Model Projections (Scenario Comparison)',
-    formula: 'gap = Scenario_B_EGR - target_EGR (+1.2pp)',
-    accuracy: 'Convergence error delta checks',
-    method: 'IPS Prediction comparison',
-    link: '/dashboard/ips-engine'
-  }
-};
-
 export default function ProvenanceInspector() {
   const {
     selectedProvenanceMetric,
@@ -101,7 +22,9 @@ export default function ProvenanceInspector() {
     provenanceConversations,
     addProvenanceMessage,
     workspaceMetrics,
-    updateWorkspaceMetric
+    updateWorkspaceMetric,
+    setup,
+    optimisationResult,
   } = useStore();
 
   const navigate = useNavigate();
@@ -125,12 +48,15 @@ export default function ProvenanceInspector() {
     updateWorkspaceMetric(metric, editVal);
   };
 
-  const info = METRIC_PROVENANCE_INFO[key] || {
-    source: 'Multiple spreadsheet records parsed by ECR',
-    formula: 'Derived via ECR node connections',
-    accuracy: 'Standard computation',
-    method: 'IPS Engine Output',
-    link: '/dashboard/blueprint/general'
+  const info = {
+    source: setup.sources.length > 0
+      ? setup.sources.map(s => s.name).join(', ')
+      : 'No dataset uploaded yet',
+    accuracy: optimisationResult
+      ? `${optimisationResult.converged ? 'Converged' : 'Did not converge'} in ${optimisationResult.durationMs}ms`
+      : 'Run the optimiser from the IPS Engine screen to compute this',
+    method: optimisationResult ? `${optimisationResult.method} Solver` : 'Not yet computed',
+    link: '/dashboard/ips-engine'
   };
 
   const conversation = provenanceConversations[key] || [
@@ -234,13 +160,6 @@ export default function ProvenanceInspector() {
               <span className="text-warm-muted font-semibold block text-[10px] uppercase">Data Source Origin:</span>
               <span className="font-mono text-[11px] block mt-0.5 bg-warm-bg/40 px-2 py-1 rounded border border-warm-border/30 text-warm-text truncate" title={info.source}>
                 {info.source}
-              </span>
-            </div>
-
-            <div>
-              <span className="text-warm-muted font-semibold block text-[10px] uppercase">Mathematical Formula:</span>
-              <span className="font-mono text-[10.5px] block mt-0.5 bg-warm-bg/40 px-2 py-1 rounded border border-warm-border/30 text-warm-text break-words">
-                {info.formula}
               </span>
             </div>
 

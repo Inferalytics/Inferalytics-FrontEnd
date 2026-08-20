@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import Header from './Header';
 import LeftPanel from './LeftPanel';
@@ -19,14 +19,40 @@ const routeTabMap: Record<string, number> = {
 
 export default function Shell() {
   const { tab, subtab } = useParams<{ tab: string; subtab?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { 
     setScreen, 
     leftSidebarOpen, 
     setLeftSidebarOpen, 
     rightSidebarOpen, 
-    setRightSidebarOpen 
+    setRightSidebarOpen,
+    activeBatchId,
+    setActiveBatch,
+    batches
   } = useStore();
+
+  // 1. Sync batch query param from URL on page load / refresh
+  useEffect(() => {
+    const urlBatchId = searchParams.get('batch');
+    if (urlBatchId && urlBatchId !== activeBatchId) {
+      setActiveBatch(urlBatchId);
+    }
+  }, [searchParams]);
+
+  // 2. Keep URL query param synced whenever activeBatchId changes
+  useEffect(() => {
+    if (activeBatchId && searchParams.get('batch') !== activeBatchId) {
+      setSearchParams(
+        prev => {
+          const newParams = new URLSearchParams(prev);
+          newParams.set('batch', activeBatchId);
+          return newParams;
+        },
+        { replace: true }
+      );
+    }
+  }, [activeBatchId, searchParams, setSearchParams]);
 
   useEffect(() => {
     // Automatically synchronize browser route parameters with Zustand store
@@ -37,21 +63,25 @@ export default function Shell() {
 
   // Canonical redirection for nested views that have default subtabs
   useEffect(() => {
+    const batchQuery = activeBatchId ? `?batch=${activeBatchId}` : '';
     if (tab === 'blueprint' && !subtab) {
-      navigate('/dashboard/blueprint/general', { replace: true });
+      navigate(`/dashboard/blueprint/general${batchQuery}`, { replace: true });
     } else if (tab === 'ecr-build' && !subtab) {
-      navigate('/dashboard/ecr-build/dimensions', { replace: true });
+      navigate(`/dashboard/ecr-build/dimensions${batchQuery}`, { replace: true });
     } else if (tab === 'workspace' && !subtab) {
-      navigate('/dashboard/workspace/summary', { replace: true });
+      navigate(`/dashboard/workspace/summary${batchQuery}`, { replace: true });
     }
-  }, [tab, subtab, navigate]);
+  }, [tab, subtab, navigate, activeBatchId]);
 
-  // Close mobile drawers when navigating between tabs
+  // Close mobile drawers on mount and when navigating between tabs on small viewports
   useEffect(() => {
-    if (window.innerWidth < 1024) {
-      setLeftSidebarOpen(false);
-      setRightSidebarOpen(false);
-    }
+    const handleCheckMobile = () => {
+      if (window.innerWidth < 1024) {
+        setLeftSidebarOpen(false);
+        setRightSidebarOpen(false);
+      }
+    };
+    handleCheckMobile();
   }, [tab, subtab, setLeftSidebarOpen, setRightSidebarOpen]);
 
   // Hide side panels on screen 01 (talk) to maintain full bleed conversation grid

@@ -1,28 +1,101 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useUser } from '@clerk/clerk-react';
 import { useStore } from '../../store/useStore';
-import { Sparkles, Send, RefreshCw } from 'lucide-react';
+import { Sparkles, Send, RefreshCw, Paperclip } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ProvenanceInspector from './ProvenanceInspector';
+import api from '../../api';
+import { getRouteForTools } from '../../lib/agentNavigation';
 
 const renderFormattedText = (content: string) => {
-  if (!content) return '';
-  const parts = content.split('**');
-  return parts.map((part, index) => {
-    if (index % 2 === 1) {
-      return <strong key={index} className="font-bold text-warm-text">{part}</strong>;
+  if (!content) return null;
+
+  // Split by line blocks to preserve markdown bullet lists and paragraphs cleanly
+  const lines = content.split('\n');
+
+  return lines.map((line, lIdx) => {
+    // Process line level formatting: bold, italic, code backticks
+    const processInline = (text: string) => {
+      // Split by bold (**text**)
+      const boldParts = text.split(/\*\*(.*?)\*\*/g);
+      return boldParts.map((bPart, bIdx) => {
+        if (bIdx % 2 === 1) {
+          return <strong key={`b-${bIdx}`} className="font-bold text-warm-text">{bPart}</strong>;
+        }
+
+        // Split by inline code (`code`)
+        const codeParts = bPart.split(/`(.*?)`/g);
+        return codeParts.map((cPart, cIdx) => {
+          if (cIdx % 2 === 1) {
+            return (
+              <code key={`c-${cIdx}`} className="px-1.5 py-0.5 mx-0.5 rounded bg-warm-bg border border-warm-border text-[11px] font-mono text-brand-indigo font-semibold">
+                {cPart}
+              </code>
+            );
+          }
+
+          // Split by italics (*text*)
+          const italicParts = cPart.split(/\*(.*?)\*/g);
+          return italicParts.map((iPart, iIdx) => {
+            if (iIdx % 2 === 1) {
+              return <em key={`i-${iIdx}`} className="italic text-warm-text/90">{iPart}</em>;
+            }
+            return iPart;
+          });
+        });
+      });
+    };
+
+    const trimmed = line.trim();
+
+    // Bullet list item (- or *)
+    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      return (
+        <div key={lIdx} className="flex items-start gap-2 my-0.5 pl-1">
+          <span className="text-brand-indigo font-bold select-none text-[12px] leading-tight">•</span>
+          <div className="flex-1 text-[12.5px] leading-relaxed text-warm-text/90">
+            {processInline(trimmed.slice(2))}
+          </div>
+        </div>
+      );
     }
-    return part;
+
+    // Header 1 / 2 / 3
+    if (trimmed.startsWith('# ')) {
+      return <h3 key={lIdx} className="font-bold text-[14px] text-warm-text mt-2 mb-1">{processInline(trimmed.slice(2))}</h3>;
+    }
+    if (trimmed.startsWith('## ') || trimmed.startsWith('### ')) {
+      return <h4 key={lIdx} className="font-semibold text-[13px] text-warm-text mt-1.5 mb-0.5">{processInline(trimmed.replace(/^#+\s*/, ''))}</h4>;
+    }
+
+    // Empty paragraph line spacer
+    if (!trimmed) {
+      return <div key={lIdx} className="h-1.5" />;
+    }
+
+    // Standard paragraph line
+    return (
+      <div key={lIdx} className="text-[12.5px] leading-relaxed">
+        {processInline(line)}
+      </div>
+    );
   });
 };
 
 export default function RightPanel() {
+  const { user } = useUser();
+  const firstName = user?.firstName || 'there';
+
   const {
     conversation,
     addMessage,
     selectedProvenanceMetric,
     runOptimisation,
     runScenarioB,
-    screen
+    screen,
+    activeBatchId,
+    syncBackendState,
+    createBatchApi,
   } = useStore();
 
   const { tab } = useParams<{ tab: string }>();
@@ -30,6 +103,69 @@ export default function RightPanel() {
   const [inputVal, setInputVal] = useState('');
   const [isOptimizing, setIsOptimizing] = useState(false);
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const historyRef = useRef<{ role: 'user' | 'assistant'; content: string }[]>([]);
+
+  const sendMessage = async (userText: string) => {
+    if (!userText.trim()) return;
+    addMessage({ role: 'user', content: userText });
+
+    try {
+      setIsOptimizing(true);
+
+      let targetBatchId = activeBatchId;
+      // Valid UUID check: hex format 8-4-4-4-12 or 32 hex chars
+      const isUuid = targetBatchId && /^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$/.test(targetBatchId);
+
+      if (!isUuid) {
+        if (createBatchApi) {
+          const defaultName = `Batch ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+          targetBatchId = await createBatchApi(defaultName);
+        } else {
+          const defaultName = `Batch ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+          const createRes = await api.createBatch(defaultName);
+          targetBatchId = createRes.data.batch_id;
+          await api.switchBatch(targetBatchId);
+        }
+      }
+
+      const res = await api.agentChat({
+        message: userText,
+        batch_id: targetBatchId,
+      });
+
+      historyRef.current = [
+        ...historyRef.current,
+        { role: 'user', content: userText },
+        { role: 'assistant', content: res.reply },
+      ];
+
+      let replyContent = res.reply;
+      if (res.tools_used && res.tools_used.length > 0) {
+        const formattedTools = res.tools_used.map(t => {
+          const clean = t.replace(/_/g, ' ');
+          return clean.charAt(0).toUpperCase() + clean.slice(1);
+        });
+        replyContent += `\n\n*Executed:* \`${formattedTools.join('`, `')}\``;
+      }
+
+      addMessage({ role: 'ai', content: replyContent });
+
+      // Automatically sync all backend data tables and metrics
+      if (syncBackendState) {
+        await syncBackendState();
+      }
+
+      // Jump to the tab that shows this turn's real result
+      const route = getRouteForTools(res.tools_used);
+      if (route) navigate(route);
+    } catch (err: any) {
+      // Fallback response if offline/dev mode without server
+      console.warn('Agent call error in RightPanel:', err);
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
 
   const isBannerActionDone = (actionType: string) => {
     if (actionType === 'upload-data') return screen > 2;
@@ -46,8 +182,9 @@ export default function RightPanel() {
 
   const handleSend = () => {
     if (!inputVal.trim()) return;
-    addMessage({ role: 'user', content: inputVal });
+    const text = inputVal.trim();
     setInputVal('');
+    void sendMessage(text);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -131,14 +268,23 @@ export default function RightPanel() {
               ) : (
                 // Normal Speech Bubbles
                 <div
-                  className={`px-4 py-2.5 text-[13px] leading-relaxed shadow-sm border ${
+                  className={`group relative px-4 py-2.5 text-[13px] leading-relaxed shadow-sm border select-text selection:bg-brand-indigo selection:text-white ${
                     isAI
                       ? 'bg-white border-warm-border text-warm-text rounded-2xl rounded-bl-sm'
                       : 'bg-lavender/30 border-lavender/50 text-brand-indigo rounded-2xl rounded-br-sm'
                   }`}
                   style={{ whiteSpace: 'pre-wrap' }}
                 >
-                  {renderFormattedText(msg.content)}
+                  {/* Copy Button on Hover */}
+                  <button
+                    onClick={() => navigator.clipboard.writeText(msg.content)}
+                    title="Copy message"
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md bg-warm-bg hover:bg-muted text-warm-muted hover:text-warm-text border border-warm-border/60 text-[10px] font-sans flex items-center gap-1 shadow-xs"
+                  >
+                    <span>Copy</span>
+                  </button>
+
+                  {renderFormattedText(msg.content.replace(/^Hi there!/, `Hi ${firstName}.`))}
 
                   {/* Suggestion Chips */}
                   {isAI && msg.chips && msg.chips.length > 0 && (
@@ -146,10 +292,10 @@ export default function RightPanel() {
                       {msg.chips.map((chip, cIdx) => (
                         <button
                           key={cIdx}
-                          onClick={() => addMessage({ role: 'user', content: chip })}
+                          onClick={() => void sendMessage(chip.replace(/^\+\s*/, ''))}
                           className="px-2.5 py-1 rounded-full bg-lavender/40 hover:bg-lavender/60 text-brand-indigo text-[11px] font-medium transition-colors cursor-pointer border border-lavender/30"
                         >
-                          + {chip}
+                          + {chip.replace(/^\+\s*/, '')}
                         </button>
                       ))}
                     </div>
@@ -187,8 +333,63 @@ export default function RightPanel() {
             </div>
           );
         })}
+
+        {/* Animated Thinking/Typing Dots Bubble */}
+        {isThinking && (
+          <div className="flex flex-col gap-1.5 max-w-[85%] self-start animate-float-up">
+            <div className="px-4 py-3 bg-white border border-warm-border/80 text-warm-text rounded-2xl rounded-bl-sm shadow-sm flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5 text-brand-indigo animate-spin shrink-0" />
+              <span className="text-[12px] font-medium text-warm-muted">AI is processing pipeline</span>
+              <div className="flex items-center gap-1 ml-1">
+                <span className="h-1.5 w-1.5 bg-brand-indigo rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="h-1.5 w-1.5 bg-brand-indigo rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="h-1.5 w-1.5 bg-brand-indigo rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+            </div>
+          </div>
+        )}
+
         <div ref={threadEndRef} />
       </div>
+
+      {/* Hidden File Input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          try {
+            setIsOptimizing(true);
+            const res = await api.uploadFile(file);
+            addMessage({
+              role: 'ai',
+              content: `File **${res.data.file_name}** uploaded successfully! Parsed ${res.data.row_count} rows and ${res.data.column_count} columns in batch \`${res.data.batch_id.slice(0, 8)}...\`.`,
+              chips: [
+                `Run pipeline for ${res.data.file_name} and optimize for 15% growth`,
+                `Vectorise and inspect columns of ${res.data.file_name}`,
+                `Compare ${res.data.file_name} with baseline scenarios`
+              ]
+            });
+
+            if (syncBackendState) {
+              await syncBackendState();
+            }
+            navigate('/dashboard/ecr-batch');
+          } catch (err: any) {
+            const detail = err?.response?.data?.detail || err?.message || 'File upload failed';
+            addMessage({
+              role: 'ai',
+              content: `File upload failed: ${detail}`,
+            });
+          } finally {
+            setIsOptimizing(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+          }
+        }}
+        accept=".csv,.xlsx,.xls,.docx,.doc,.json"
+        className="hidden"
+      />
 
       {/* Composer Input */}
       <div className="p-3 border-t border-warm-border/40 bg-white/30 shrink-0">
@@ -206,9 +407,20 @@ export default function RightPanel() {
             className="w-full px-3 py-2 text-[12.5px] text-warm-text bg-transparent placeholder-warm-muted border-none outline-none focus:ring-0 resize-none max-h-16 disabled:opacity-50"
           />
           <div className="px-3 pb-1.5 flex justify-between items-center bg-transparent">
-            <span className="text-[9px] text-warm-muted font-mono font-medium">
-              Press ⏎ to send · ⇧⏎ for new line
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isThinking}
+                className="p-1 rounded-md text-warm-muted hover:text-warm-text hover:bg-warm-bg transition-colors cursor-pointer disabled:opacity-50"
+                title="Attach CSV, Excel, or Word file"
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+              </button>
+              <span className="text-[9px] text-warm-muted font-mono font-medium">
+                Press ⏎ to send · ⇧⏎ for new line
+              </span>
+            </div>
             <button
               onClick={handleSend}
               disabled={!inputVal.trim() || isThinking}

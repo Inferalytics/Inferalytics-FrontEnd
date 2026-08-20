@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { RotateCw, Play, Pin, ChevronDown, TrendingUp, Lock, Link2, RefreshCw } from 'lucide-react';
+import { RotateCw, Play, Pin, ChevronDown, TrendingUp, Link2, RefreshCw } from 'lucide-react';
 import { useStore } from '../../../store/useStore';
 import { directBezier } from './bezierUtils';
 import { ModelType } from '../../../types';
+import type { ForecastData } from '../../../types/api';
 import { useNavigate } from 'react-router-dom';
+import api from '../../../api';
 
 interface OptimisePanelProps {
   triggerToast: (msg: string) => void;
@@ -55,80 +57,102 @@ function computePath(fp: { x: number; y: number }, tp: { x: number; y: number })
 const SOLVER_OPTIONS: { value: ModelType; label: string; desc: string }[] = [
   { value: 'Newton-Raphson', label: 'Inference (Newton-Raphson)', desc: 'Gradient-based optimization' },
   { value: 'Holt-Winters',   label: 'Prediction (Holt-Winters)',   desc: 'Time-series forecasting'   },
-  { value: 'Monte Carlo',    label: 'Simulation (Monte Carlo)',    desc: 'Stochastic risk simulation'   },
   { value: 'auto',           label: 'Auto-select (Default)',        desc: 'Let AI choose method'           },
 ];
 
-const SOLVER_FORECASTS: Record<ModelType, {
-  peakText: string;
-  accuracyText: string;
-  rows: { quarter: string; baseline: string; optimised: string; delta: string }[];
-}> = {
-  'Newton-Raphson': {
-    peakText: 'Peak EGR: 13.2% in Q4 — exceeds target by +1.2pp',
-    accuracyText: 'Newton-Raphson Solver converged in 8 iterations (epsilon < 1e-6)',
-    rows: [
-      { quarter: 'Q1 2025', baseline: '8.4%',  optimised: '9.1%',  delta: '+0.7pp' },
-      { quarter: 'Q2 2025', baseline: '9.2%',  optimised: '10.4%', delta: '+1.2pp' },
-      { quarter: 'Q3 2025', baseline: '10.1%', optimised: '11.8%', delta: '+1.7pp' },
-      { quarter: 'Q4 2025', baseline: '11.0%', optimised: '13.2%', delta: '+2.2pp' },
-    ]
-  },
-  'Holt-Winters': {
-    peakText: 'Peak EGR: 11.8% in Q4 — fails target by -0.2pp (Baseline trend)',
-    accuracyText: 'Holt-Winters prediction (alpha=0.3, beta=0.1)',
-    rows: [
-      { quarter: 'Q1 2025', baseline: '8.4%',  optimised: '8.6%',  delta: '+0.2pp' },
-      { quarter: 'Q2 2025', baseline: '9.2%',  optimised: '9.5%',  delta: '+0.3pp' },
-      { quarter: 'Q3 2025', baseline: '10.1%', optimised: '10.8%', delta: '+0.7pp' },
-      { quarter: 'Q4 2025', baseline: '11.0%', optimised: '11.8%', delta: '+0.8pp' },
-    ]
-  },
-  'Monte Carlo': {
-    peakText: 'Median EGR: 12.9% in Q4 — 74% probability of exceeding target',
-    accuracyText: 'Stochastic simulation completed 5,000 trials (95% CI: 11.4% - 14.4%)',
-    rows: [
-      { quarter: 'Q1 2025', baseline: '8.4%',  optimised: '9.0% [±0.4%]', delta: '+0.6pp' },
-      { quarter: 'Q2 2025', baseline: '9.2%',  optimised: '10.2% [±0.6%]', delta: '+1.0pp' },
-      { quarter: 'Q3 2025', baseline: '10.1%', optimised: '11.6% [±0.9%]', delta: '+1.5pp' },
-      { quarter: 'Q4 2025', baseline: '11.0%', optimised: '12.9% [±1.2%]', delta: '+1.9pp' },
-    ]
-  },
-  'auto': {
-    peakText: 'Peak EGR: 13.2% in Q4 — Solver auto-selected Newton-Raphson',
-    accuracyText: 'AI heuristics selected Gradient Descent based on linear constraints',
-    rows: [
-      { quarter: 'Q1 2025', baseline: '8.4%',  optimised: '9.1%',  delta: '+0.7pp' },
-      { quarter: 'Q2 2025', baseline: '9.2%',  optimised: '10.4%', delta: '+1.2pp' },
-      { quarter: 'Q3 2025', baseline: '10.1%', optimised: '11.8%', delta: '+1.7pp' },
-      { quarter: 'Q4 2025', baseline: '11.0%', optimised: '13.2%', delta: '+2.2pp' },
-    ]
-  }
-};
-
-const DIMENSIONS = [
-  { id: 'qtr',    name: 'Quarter',      type: 'date'        as const, samples: ['Q1 2025', 'Q2 2025', 'Q3 2025']   },
-  { id: 'rev',    name: 'Revenue',      type: 'numeric'     as const, samples: ['$1.24M', '$980K', '$2.10M']       },
-  { id: 'reg',    name: 'Region',       type: 'categorical' as const, samples: ['EMEA', 'APAC', 'NA-East']         },
-  { id: 'prod',   name: 'Product Line', type: 'categorical' as const, samples: ['Enterprise', 'SMB', 'Self-serve'] },
-  { id: 'cost',   name: 'Cost Centre',  type: 'numeric'     as const, samples: ['$420K', '$311K', '$508K']         },
-  { id: 'margin', name: 'Gross Margin', type: 'numeric'     as const, samples: ['72%', '68%', '75%']               },
-  { id: 'egr',    name: 'EGR Estimate', type: 'numeric'     as const, samples: ['target: 12%', 'baseline: 8.4%']  },
-];
-
 export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
-  const { egrTarget, setEgrTarget, runOptimisation, model, setModel } = useStore();
+  const { setup, egrTarget, setEgrTarget, runOptimisation, model, setModel, activeBatchId, addMessage, syncBackendState, optimisationResult } = useStore();
   const navigate = useNavigate();
 
-  const forecastData = SOLVER_FORECASTS[model] || SOLVER_FORECASTS['auto'];
-  const forecastRows = forecastData.rows;
+  // Dynamically derive dimension cards from setup parameters & segments or default
+  const dynamicDimensions = React.useMemo(() => {
+    const items: { id: string; name: string; type: 'numeric' | 'categorical' | 'date'; samples: string[] }[] = [
+      { id: 'qtr', name: 'Quarter', type: 'date', samples: setup.timeRange ? [setup.timeRange.split(' → ')[0] || 'Q1', setup.timeRange.split(' → ')[1] || 'Q4'] : ['Q1', 'Q2', 'Q3'] },
+    ];
 
-  const getCardSamples = (card: typeof DIMENSIONS[number]) => {
+    (setup.parameters || ['Sales', 'Revenue']).forEach((param, pIdx) => {
+      items.push({
+        id: `param-${pIdx}`,
+        name: param,
+        type: 'numeric',
+        samples: []
+      });
+    });
+
+    (setup.segments || ['Region', 'Category']).forEach((seg, sIdx) => {
+      items.push({
+        id: `seg-${sIdx}`,
+        name: seg,
+        type: 'categorical',
+        samples: []
+      });
+    });
+
+    items.push({
+      id: 'egr',
+      name: 'EGR Estimate',
+      type: 'numeric',
+      samples: [`target: ${egrTarget}%`],
+    });
+
+    return items;
+  }, [setup.parameters, setup.segments, setup.timeRange, egrTarget]);
+
+  // Compute clean layout grid positions dynamically based on real items count
+  const dynamicPositions = React.useMemo(() => {
+    const pos: Record<string, { x: number; y: number }> = {};
+    const cols = 3;
+    const colWidth = 240;
+    const rowHeight = 180;
+
+    dynamicDimensions.forEach((dim, idx) => {
+      if (dim.id === 'egr') {
+        // Position EGR centered at bottom
+        pos[dim.id] = { x: 280, y: 380 };
+      } else {
+        const c = idx % cols;
+        const r = Math.floor(idx / cols);
+        pos[dim.id] = { x: 40 + c * colWidth, y: 80 + r * rowHeight };
+      }
+    });
+    return pos;
+  }, [dynamicDimensions]);
+
+  // Auto-connect dynamic dataset cards (Quarter -> Parameters -> Segments -> EGR)
+  const dynamicConnections = React.useMemo(() => {
+    const conns: Connection[] = [];
+    const qtr = dynamicDimensions.find(d => d.id === 'qtr');
+    const params = dynamicDimensions.filter(d => d.id.startsWith('param-'));
+    const segs = dynamicDimensions.filter(d => d.id.startsWith('seg-'));
+    const egr = dynamicDimensions.find(d => d.id === 'egr');
+
+    if (qtr && params.length > 0) {
+      conns.push({ id: `${qtr.id}-${params[0].id}`, from: qtr.id, to: params[0].id, color: '#6E69BE', weight: 2.0, dashed: false, isDefault: true });
+    }
+
+    params.forEach((p, pIdx) => {
+      if (segs[pIdx]) {
+        conns.push({ id: `${p.id}-${segs[pIdx].id}`, from: p.id, to: segs[pIdx].id, color: '#6E69BE', weight: 2.0, dashed: false, isDefault: true });
+      }
+      if (egr) {
+        conns.push({ id: `${p.id}-${egr.id}`, from: p.id, to: egr.id, color: '#6E69BE', weight: 2.0, dashed: false, isDefault: true });
+      }
+    });
+
+    segs.forEach((s) => {
+      if (egr) {
+        conns.push({ id: `${s.id}-${egr.id}`, from: s.id, to: egr.id, color: '#FF5A1F', weight: 1.6, dashed: true, isDefault: true });
+      }
+    });
+
+    return conns;
+  }, [dynamicDimensions]);
+
+  const getCardSamples = (card: { id: string; name: string; type: string; samples: string[] }) => {
     if (card.id === 'egr') {
-      if (model === 'Newton-Raphson') return ['target: 12%', 'baseline: 8.4%', 'forecast: 13.2%'];
-      if (model === 'Holt-Winters') return ['target: 12%', 'baseline: 8.4%', 'forecast: 11.8%'];
-      if (model === 'Monte Carlo') return ['target: 12%', 'baseline: 8.4%', 'median: 12.9%'];
-      return ['target: 12%', 'baseline: 8.4%', 'forecast: 13.2%'];
+      return optimisationResult
+        ? [`target: ${egrTarget}%`, `achieved: ${optimisationResult.egrAchieved}%`]
+        : [`target: ${egrTarget}%`, 'not yet computed'];
     }
     return card.samples;
   };
@@ -141,9 +165,10 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
   const [drag,            setDrag]            = useState<{ id: string; ox: number; oy: number } | null>(null);
   const [zoom,            setZoom]            = useState(1);
   const [solverOpen,      setSolverOpen]      = useState(false);
-  const [churnLimit,      setChurnLimit]      = useState(6);
   const [forecastOpen,    setForecastOpen]    = useState(false);
   const [forecastLoading, setForecastLoading] = useState(false);
+  const [realForecast,    setRealForecast]    = useState<ForecastData | null>(null);
+  const [forecastError,   setForecastError]   = useState<string | null>(null);
   const [linkSource,      setLinkSource]      = useState<string | null>(null);
   const [mousePos,        setMousePos]        = useState({ x: 0, y: 0 });
   const [hoveredConn,     setHoveredConn]     = useState<string | null>(null);
@@ -156,6 +181,17 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
 
   useEffect(() => { linkSourceRef.current = linkSource; }, [linkSource]);
   useEffect(() => { connectionsRef.current = connections; }, [connections]);
+
+  // Resync layout state with the real dimension set whenever it changes —
+  // the static INITIAL_POSITIONS/INITIAL_CONNECTIONS ids (qtr/rev/reg/...)
+  // don't match the real dynamic ids (param-0, seg-0, ...) computed above.
+  useEffect(() => {
+    setPositions(dynamicPositions);
+    setConnections(dynamicConnections);
+    setPinnedIds(new Set());
+    setSelectedId(prev => (dynamicDimensions.some(d => d.id === prev) ? prev : (dynamicDimensions[0]?.id ?? '')));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dynamicDimensions.length]);
 
   // ── Escape cancels link in progress ──────────────────────────────────────
   useEffect(() => {
@@ -233,13 +269,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
   const removeConnection = (id: string) => setConnections(prev => prev.filter(c => c.id !== id));
 
   // ── Reset connections ──────────────────────────────────────────────────────
-  const resetConnections = () => setConnections(INITIAL_CONNECTIONS);
-
-  // ── Forecast ──────────────────────────────────────────────────────────────
-  const handleRunForecast = () => {
-    setForecastLoading(true); setForecastOpen(false);
-    setTimeout(() => { setForecastLoading(false); setForecastOpen(true); }, 1000);
-  };
+  const resetConnections = () => setConnections(dynamicConnections);
 
   const canvasHeight = Math.max(640, ...Object.values(positions).map(p => p.y + CARD_H + 60));
   const currentSolver = SOLVER_OPTIONS.find(s => s.value === model) ?? SOLVER_OPTIONS[0];
@@ -257,12 +287,6 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
           <input type="number" value={egrTarget} onChange={e => setEgrTarget(Number(e.target.value))}
             className="w-8 text-center bg-transparent border-none outline-none font-bold text-brand-indigo text-[12px] font-sans focus:ring-0" />
           <span className="font-bold text-brand-indigo text-[12px]">%</span>
-          <span className="h-3.5 w-px bg-warm-border mx-1" />
-          <Lock className="h-3 w-3 text-warm-muted shrink-0" />
-          <span className="text-[10px] font-semibold text-warm-muted shrink-0">Churn ≤</span>
-          <input type="number" value={churnLimit} onChange={e => setChurnLimit(Number(e.target.value))}
-            className="w-7 text-center bg-transparent border-none outline-none font-bold text-warm-text text-[12px] font-sans focus:ring-0" />
-          <span className="text-warm-muted text-[12px] font-bold">%</span>
         </div>
 
         <span className="h-5 w-px bg-warm-border/60 shrink-0" />
@@ -301,7 +325,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
             <div className="flex items-center gap-1.5 bg-peach/10 border border-peach/40 rounded-lg px-2.5 py-1">
               <Link2 className="h-3 w-3 text-peach" />
               <span className="text-[10.5px] font-semibold text-peach whitespace-nowrap">
-                ↳ {DIMENSIONS.find(d => d.id === linkSource)?.name}
+                ↳ {dynamicDimensions.find(d => d.id === linkSource)?.name}
               </span>
             </div>
             <button onClick={() => setLinkSource(null)}
@@ -325,60 +349,144 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
 
         {/* Group 4 — actions (pushed to right) */}
         <div className="flex items-center gap-1.5 ml-auto shrink-0">
-          <button onClick={handleRunForecast} disabled={forecastLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-warm-border bg-white hover:bg-secondary rounded-xl text-[11.5px] font-semibold text-warm-text cursor-pointer transition-colors disabled:opacity-50">
+          <button
+            onClick={async () => {
+              try {
+                setForecastLoading(true);
+                setForecastOpen(false);
+
+                // Pass forecast request to Data Ops AI agent
+                const userPrompt = `Run forecast prediction with solver ${currentSolver.label} for batch workspace`;
+                addMessage({ role: 'user', content: userPrompt });
+
+                const agentRes = await api.agentChat({
+                  message: userPrompt,
+                  batch_id: activeBatchId || '',
+                });
+
+                let replyContent = agentRes.reply;
+                if (agentRes.tools_used && agentRes.tools_used.length > 0) {
+                  const formattedTools = agentRes.tools_used.map((t: string) => {
+                    const clean = t.replace(/_/g, ' ');
+                    return clean.charAt(0).toUpperCase() + clean.slice(1);
+                  });
+                  replyContent += `\n\n*Executed:* \`${formattedTools.join('`, `')}\``;
+                }
+
+                addMessage({ role: 'ai', content: replyContent });
+
+                // Call forecast endpoint and keep the real response for display
+                setForecastError(null);
+                const fcRes = await api.forecast();
+                setRealForecast(fcRes.data);
+                if (syncBackendState) {
+                  await syncBackendState();
+                }
+              } catch (err: any) {
+                setForecastError(err?.response?.data?.detail || err?.message || 'Forecast failed.');
+                console.warn('Agent forecast execution notice:', err);
+              } finally {
+                setForecastLoading(false);
+                setForecastOpen(true);
+              }
+            }}
+            disabled={forecastLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-warm-border bg-white hover:bg-secondary rounded-xl text-[11.5px] font-semibold text-warm-text cursor-pointer transition-colors disabled:opacity-50"
+          >
             {forecastLoading ? <RotateCw className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3 text-warm-muted" />}
             Run Forecast (Prediction)
           </button>
           <button
-            onClick={() => {
-              setIsOptimizing(true);
-              runOptimisation(() => {
+            onClick={async () => {
+              try {
+                setIsOptimizing(true);
+
+                // Pass optimization request to Data Ops AI agent
+                const userPrompt = `Run optimisation inference using ${model} solver against ${egrTarget}% EGR target`;
+                addMessage({ role: 'user', content: userPrompt });
+
+                const agentRes = await api.agentChat({
+                  message: userPrompt,
+                  batch_id: activeBatchId || '',
+                });
+
+                let replyContent = agentRes.reply;
+                if (agentRes.tools_used && agentRes.tools_used.length > 0) {
+                  const formattedTools = agentRes.tools_used.map(t => {
+                    const clean = t.replace(/_/g, ' ');
+                    return clean.charAt(0).toUpperCase() + clean.slice(1);
+                  });
+                  replyContent += `\n\n*Executed:* \`${formattedTools.join('`, `')}\``;
+                }
+
+                addMessage({ role: 'ai', content: replyContent });
+
+                runOptimisation(() => {
+                  setIsOptimizing(false);
+                  navigate('/dashboard/workspace/summary');
+                });
+              } catch (err: any) {
+                console.warn('Agent optimization execution notice:', err);
                 setIsOptimizing(false);
-                navigate('/dashboard/workspace/summary');
-              });
+              }
             }}
             disabled={isOptimizing}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-indigo hover:bg-brand-indigo/90 disabled:opacity-50 text-white rounded-xl text-[11.5px] font-bold shadow-sm transition-colors cursor-pointer">
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-indigo hover:bg-brand-indigo/90 disabled:opacity-50 text-white rounded-xl text-[11.5px] font-bold shadow-sm transition-colors cursor-pointer"
+          >
             {isOptimizing ? <RotateCw className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3 fill-current" />}
             Run Optimisation (Inference)
           </button>
         </div>
       </div>
 
-      {/* ── Forecast preview ─────────────────────────────────────── */}
+      {/* ── Forecast preview — real Holt-Winters result from the backend ─── */}
       {forecastOpen && (
         <div className="bg-white border border-warm-border rounded-2xl shadow-card overflow-hidden animate-float-up">
           <div className="px-4 py-2.5 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/25 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <TrendingUp className="h-3.5 w-3.5 text-brand-indigo" />
-              <span className="text-[12px] font-bold text-warm-text">IPS Trajectory Projection — {currentSolver.label}</span>
-              <span className="text-[9.5px] font-mono text-warm-muted bg-secondary px-2 py-0.5 rounded-full">{forecastData.accuracyText}</span>
+              <span className="text-[12px] font-bold text-warm-text">Forecast Result — {currentSolver.label}</span>
+              {realForecast && (
+                <span className="text-[9.5px] font-mono text-warm-muted bg-secondary px-2 py-0.5 rounded-full">
+                  alpha={realForecast.holt_winters_parameters.alpha}, beta={realForecast.holt_winters_parameters.beta}
+                </span>
+              )}
             </div>
             <button onClick={() => setForecastOpen(false)} className="text-warm-muted hover:text-warm-text cursor-pointer text-[12px]">✕</button>
           </div>
-          <table className="w-full text-left border-collapse text-[11.5px]">
-            <thead>
-              <tr className="bg-warm-bg/60 border-b border-warm-border text-[10px] font-bold text-warm-muted uppercase tracking-wide font-sans">
-                <th className="p-2.5 pl-4">Quarter</th>
-                <th className="p-2.5">Baseline Forecast</th>
-                <th className="p-2.5">Optimised Inference</th>
-                <th className="p-2.5 pr-4">Δ Uplift</th>
-              </tr>
-            </thead>
-            <tbody>
-              {forecastRows.map((row, i) => (
-                <tr key={i} className="border-b border-warm-border/30 hover:bg-warm-bg/15 transition-colors">
-                  <td className="p-2.5 pl-4 font-mono font-semibold text-warm-text">{row.quarter}</td>
-                  <td className="p-2.5 font-mono text-warm-muted">{row.baseline}</td>
-                  <td className="p-2.5 font-mono font-bold text-brand-indigo">{row.optimised}</td>
-                  <td className="p-2.5 pr-4 font-mono font-bold text-sage">{row.delta}</td>
+
+          {!realForecast ? (
+            <div className="p-6 text-center text-[12px] text-warm-muted">
+              {forecastError ? `Error: ${forecastError}` : 'No forecast result available.'}
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse text-[11.5px]">
+              <tbody>
+                <tr className="border-b border-warm-border/30">
+                  <td className="p-2.5 pl-4 font-semibold text-warm-muted">Data Range</td>
+                  <td className="p-2.5 pr-4 font-mono text-warm-text">{realForecast.data_range.start_time} → {realForecast.data_range.end_time}</td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-4 py-2 bg-sage-light/40 border-t border-sage-border/40 text-[10.5px] font-sans flex items-center justify-between">
-            <span className="text-warm-muted">{forecastData.peakText}</span>
+                <tr className="border-b border-warm-border/30">
+                  <td className="p-2.5 pl-4 font-semibold text-warm-muted">Last Known Value</td>
+                  <td className="p-2.5 pr-4 font-mono text-warm-text">{realForecast.last_known_value.toLocaleString()}</td>
+                </tr>
+                <tr className="border-b border-warm-border/30">
+                  <td className="p-2.5 pl-4 font-semibold text-warm-muted">Target Period</td>
+                  <td className="p-2.5 pr-4 font-mono font-bold text-brand-indigo">{realForecast.target_time}</td>
+                </tr>
+                <tr className="border-b border-warm-border/30">
+                  <td className="p-2.5 pl-4 font-semibold text-warm-muted">Forecasted Value</td>
+                  <td className="p-2.5 pr-4 font-mono font-bold text-brand-indigo">{realForecast.forecasted_value.toLocaleString()}</td>
+                </tr>
+                <tr>
+                  <td className="p-2.5 pl-4 font-semibold text-warm-muted">Predicted Growth Rate</td>
+                  <td className="p-2.5 pr-4 font-mono font-bold text-sage">{realForecast.predicted_growth_rate_percentage}</td>
+                </tr>
+              </tbody>
+            </table>
+          )}
+
+          <div className="px-4 py-2 bg-sage-light/40 border-t border-sage-border/40 text-[10.5px] font-sans flex items-center justify-end">
             <span className="text-brand-indigo font-semibold hover:underline cursor-pointer"
               onClick={() => {
                 setIsOptimizing(true);
@@ -508,8 +616,8 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
         </svg>
 
         {/* Dimension cards — above SVG */}
-        {DIMENSIONS.map((d) => {
-          const pos      = positions[d.id];
+        {dynamicDimensions.map((d) => {
+          const pos      = positions[d.id] || { x: 40, y: 80 };
           const isPinned = pinnedIds.has(d.id);
           const isSel    = selectedId === d.id;
           const isSource = linkSource === d.id;

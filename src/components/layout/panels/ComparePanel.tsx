@@ -45,7 +45,10 @@ const parseNum = (v: string): number => {
   return num;
 };
 
-const isCurrency = (v: string): boolean => v.trim().startsWith('$');
+const isCurrency = (v: string): boolean => {
+  const clean = v.trim().toLowerCase();
+  return clean.startsWith('$') || clean.endsWith('m') || clean.endsWith('k');
+};
 
 function buildRow(metric: string, aVal: string, bVal: string): ComparisonRow {
   const aNum = parseNum(aVal);
@@ -57,7 +60,7 @@ function buildRow(metric: string, aVal: string, bVal: string): ComparisonRow {
   const delta = isTie
     ? '—'
     : isCurrency(aVal) || isCurrency(bVal)
-      ? `${deltaNum >= 0 ? '+' : '-'}$${Math.abs(deltaNum / 1000).toFixed(0)}K`
+      ? `${deltaNum >= 0 ? '+' : '-'}${Math.abs(deltaNum / 1000).toFixed(0)}K`
       : `${deltaNum >= 0 ? '+' : ''}${deltaNum.toFixed(1)}pp`;
   return { metric, a: aVal, b: bVal, delta, winner, trend };
 }

@@ -2,6 +2,37 @@ import { create } from 'zustand';
 import { GlobalState, Batch, Message, Relationship, DimensionCard, Scenario, ModelType } from '../types';
 import api from '../api';
 
+export const formatByColumnName = (colName: string, val: number): string => {
+  const name = colName.toLowerCase();
+  
+  if (['revenue', 'sales', 'price', 'cost', 'income', 'profit'].some(keyword => name.includes(keyword))) {
+    if (val >= 1000000) return `$${(val / 1000000).toFixed(2)}M`;
+    if (val >= 1000) return `$${(val / 1000).toFixed(0)}K`;
+    return `$${val.toFixed(0)}`;
+  }
+  
+  if (['rate', 'ratio', 'margin', 'growth'].some(keyword => name.includes(keyword))) {
+    return `${val.toFixed(1)}%`;
+  }
+  
+  if (['weight', 'kg', 'lbs'].some(keyword => name.includes(keyword))) {
+    const suffix = name.includes('lbs') ? 'lbs' : 'kg';
+    if (val >= 1000000) return `${(val / 1000000).toFixed(2)}M ${suffix}`;
+    if (val >= 1000) return `${(val / 1000).toFixed(0)}K ${suffix}`;
+    return `${val.toFixed(0)} ${suffix}`;
+  }
+  
+  if (['hours', 'duration'].some(keyword => name.includes(keyword))) {
+    if (val >= 1000000) return `${(val / 1000000).toFixed(2)}M h`;
+    if (val >= 1000) return `${(val / 1000).toFixed(0)}K h`;
+    return `${val.toFixed(0)} h`;
+  }
+  
+  if (val >= 1000000) return `${(val / 1000000).toFixed(2)}M`;
+  if (val >= 1000) return `${(val / 1000).toFixed(0)}K`;
+  return `${val.toFixed(0)}`;
+};
+
 const INITIAL_PROVENANCE_CONVERSATIONS: Record<string, Message[]> = {};
 
 const INITIAL_CONVERSATION: Message[] = [
@@ -289,14 +320,15 @@ export const useStore = create<GlobalState>((set, get) => ({
               else if (p.includes('Q4')) growthRatesMap[segName].q4 += salesVal;
             });
 
+            const valueColName = realParameters[0] || 'Sales';
             const realGrowthRates = Object.entries(growthRatesMap).map(([seg, vals]) => {
               const yoyVal = vals.q1 > 0 ? (((vals.q4 || vals.q2) - vals.q1) / vals.q1 * 100).toFixed(1) : '0.0';
               return {
                 segment: seg,
-                q1: `$${(vals.q1 / 1000).toFixed(0)}K`,
-                q2: `$${(vals.q2 / 1000).toFixed(0)}K`,
-                q3: `$${(vals.q3 / 1000).toFixed(0)}K`,
-                q4Proj: `$${((vals.q4 || vals.q2 * 1.1) / 1000).toFixed(0)}K`,
+                q1: formatByColumnName(valueColName, vals.q1),
+                q2: formatByColumnName(valueColName, vals.q2),
+                q3: formatByColumnName(valueColName, vals.q3),
+                q4Proj: formatByColumnName(valueColName, vals.q4 || vals.q2 * 1.1),
                 yoy: `${Number(yoyVal) >= 0 ? '+' : ''}${yoyVal}%`,
               };
             });
@@ -360,7 +392,7 @@ export const useStore = create<GlobalState>((set, get) => ({
           const newScenarioItem = {
             id: `opt-${Date.now()}`,
             label: `Backend Optimization Run (${nr.converged === 1 ? 'Converged' : 'Max Iterations'})`,
-            revenue: `$${((nr.optimized_vector?.[0] ?? 2400000) / 1000000).toFixed(2)}M`,
+            revenue: formatByColumnName('Revenue', nr.optimized_vector?.[0] ?? 2400000),
             yoy: `+${finalPct}%`,
             egr: `${finalPct}%`,
             sparkColor: 'green' as const,
@@ -397,7 +429,7 @@ export const useStore = create<GlobalState>((set, get) => ({
           const forecastScenarioItem = {
             id: `fc-${Date.now()}`,
             label: `Forecast to ${fc.target_time}`,
-            revenue: `$${(fc.forecasted_value / 1000000).toFixed(2)}M`,
+            revenue: formatByColumnName('Revenue', fc.forecasted_value),
             yoy: fc.predicted_growth_rate_percentage || '+0%',
             egr: fc.predicted_growth_rate_percentage || '+0%',
             sparkColor: 'blue' as const,
@@ -530,8 +562,8 @@ export const useStore = create<GlobalState>((set, get) => ({
       return updated.find(m => m.name.toLowerCase() === metricName.toLowerCase())?.value || defaultVal;
     };
 
-    const revStr = getVal('Revenue', '$0');
-    const costStr = getVal('Cost Centre', '$0');
+    const revStr = getVal('Revenue', '0');
+    const costStr = getVal('Cost Centre', '0');
     const churnStr = getVal('Churn Rate', '0%');
 
     const parseValue = (n: string, v: string): number => {
@@ -548,12 +580,6 @@ export const useStore = create<GlobalState>((set, get) => ({
       return num;
     };
 
-    const formatCurrency = (n: number): string => {
-      if (n >= 1000000) return `$${(n / 1000000).toFixed(2)}M`;
-      if (n >= 1000) return `$${(n / 1000).toFixed(0)}K`;
-      return `$${n.toFixed(0)}`;
-    };
-
     const revNum = parseValue('Revenue', revStr);
     const costNum = parseValue('Cost Centre', costStr);
     const churnNum = parseValue('Churn Rate', churnStr);
@@ -561,11 +587,11 @@ export const useStore = create<GlobalState>((set, get) => ({
     const marginVal = revNum > 0 ? ((revNum - costNum) / revNum) * 100 : 0;
     const egrVal = 8.4 + (revNum / 2000000 - 1) * 24 - (costNum / 1000000 - 1) * 12 - (churnNum - 4) * 0.5;
 
-    const revFormatted = formatCurrency(revNum);
-    const costFormatted = formatCurrency(costNum);
-    const marginFormatted = `${marginVal.toFixed(1)}%`;
-    const churnFormatted = `${churnNum.toFixed(1)}%`;
-    const egrFormatted = `${egrVal.toFixed(1)}%`;
+    const revFormatted = formatByColumnName('Revenue', revNum);
+    const costFormatted = formatByColumnName('Cost Centre', costNum);
+    const marginFormatted = formatByColumnName('Gross Margin', marginVal);
+    const churnFormatted = formatByColumnName('Churn Rate', churnNum);
+    const egrFormatted = formatByColumnName('EGR Achieved', egrVal);
 
     const finalMetrics = updated.map(m => {
       if (m.name === 'Revenue') {

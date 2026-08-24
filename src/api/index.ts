@@ -1,5 +1,6 @@
 import axiosClient from './axiosClient';
 import type {
+  BatchSessionResponse,
   CreateBatchResponse,
   ListBatchResponse,
   SwitchBatchResponse,
@@ -53,6 +54,11 @@ export const api = {
   },
 
   // ─── Batching ─────────────────────────────────────────────────────────────
+  getBatchSession: async () => {
+    const res = await axiosClient.get<BatchSessionResponse>('/batching/session');
+    return res.data;
+  },
+
   createBatch: async (batchName: string) => {
     const res = await axiosClient.post<CreateBatchResponse>('/batching/create', { batch_name: batchName });
     return res.data;

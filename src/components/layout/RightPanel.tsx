@@ -7,7 +7,7 @@ import ProvenanceInspector from './ProvenanceInspector';
 import api from '../../api';
 import { getRouteForTools } from '../../lib/agentNavigation';
 
-const renderFormattedText = (content: string) => {
+const renderFormattedText = (content: string | undefined | null) => {
   if (!content) return null;
 
   // Split by line blocks to preserve markdown bullet lists and paragraphs cleanly
@@ -96,6 +96,8 @@ export default function RightPanel() {
     activeBatchId,
     syncBackendState,
     createBatchApi,
+    addWorldModel,
+    worldModels,
   } = useStore();
 
   const { tab } = useParams<{ tab: string }>();
@@ -134,22 +136,30 @@ export default function RightPanel() {
         batch_id: targetBatchId,
       });
 
+      const reply = res.reply || res.error || 'No response from agent.';
       historyRef.current = [
         ...historyRef.current,
         { role: 'user', content: userText },
-        { role: 'assistant', content: res.reply },
+        { role: 'assistant', content: reply },
       ];
 
-      let replyContent = res.reply;
-      if (res.tools_used && res.tools_used.length > 0) {
-        const formattedTools = res.tools_used.map(t => {
-          const clean = t.replace(/_/g, ' ');
+      let replyContent = reply;
+      const toolsUsed = Array.isArray(res.tools_used) ? res.tools_used.filter(Boolean) : [];
+      if (toolsUsed.length > 0) {
+        const formattedTools = toolsUsed.map(t => {
+          const clean = String(t).replace(/_/g, ' ');
           return clean.charAt(0).toUpperCase() + clean.slice(1);
         });
         replyContent += `\n\n*Executed:* \`${formattedTools.join('`, `')}\``;
       }
 
+      const wm = res.world_model ?? null;
+      if (wm) {
+        addWorldModel(wm);
+      }
+
       addMessage({ role: 'ai', content: replyContent });
+
 
       // Automatically sync all backend data tables and metrics
       if (syncBackendState) {
@@ -157,11 +167,12 @@ export default function RightPanel() {
       }
 
       // Jump to the tab that shows this turn's real result
-      const route = getRouteForTools(res.tools_used);
+      const route = getRouteForTools(toolsUsed);
       if (route) navigate(route);
     } catch (err: any) {
-      // Fallback response if offline/dev mode without server
       console.warn('Agent call error in RightPanel:', err);
+      const detail = err?.response?.data?.detail || err?.message || 'Something went wrong. Please try again.';
+      addMessage({ role: 'ai', content: `Error: ${detail}` });
     } finally {
       setIsOptimizing(false);
     }
@@ -277,14 +288,14 @@ export default function RightPanel() {
                 >
                   {/* Copy Button on Hover */}
                   <button
-                    onClick={() => navigator.clipboard.writeText(msg.content)}
+                    onClick={() => navigator.clipboard.writeText(msg.content || '')}
                     title="Copy message"
                     className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md bg-warm-bg hover:bg-muted text-warm-muted hover:text-warm-text border border-warm-border/60 text-[10px] font-sans flex items-center gap-1 shadow-xs"
                   >
                     <span>Copy</span>
                   </button>
 
-                  {renderFormattedText(msg.content.replace(/^Hi there!/, `Hi ${firstName}.`))}
+                  {renderFormattedText((msg.content || '').replace(/^Hi there!/, `Hi ${firstName}.`))}
 
                   {/* Suggestion Chips */}
                   {isAI && msg.chips && msg.chips.length > 0 && (
@@ -330,6 +341,7 @@ export default function RightPanel() {
                   })()}
                 </div>
               )}
+
             </div>
           );
         })}

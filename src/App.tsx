@@ -5,6 +5,7 @@ import SignInPage from './pages/SignInPage';
 import SignUpPage from './pages/SignUpPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import DashboardPage from './pages/DashboardPage';
+import BatchSelectionPage from './pages/BatchSelectionPage';
 import { setClerkTokenFetcher } from './api/axiosClient';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || 'pk_test_bW9jay1jbGVyay1rZXktMTAwLmNsZXJrLmFjY291bnRzLmRldiQ';
@@ -20,7 +21,6 @@ function ClerkTokenBridge() {
     setClerkTokenFetcher((options) => getToken(options));
   }, [getToken]);
 
-  // Exchange Clerk JWT for long-lived backend API key on login if not already stored
   React.useEffect(() => {
     if (!isSignedIn) {
       localStorage.removeItem(STORAGE_KEY);
@@ -38,7 +38,6 @@ function ClerkTokenBridge() {
           localStorage.setItem(STORAGE_KEY, res.access_token);
         }
       } catch (e) {
-        // Clear any bad key to ensure clean fallback to standard Clerk JWT header
         localStorage.removeItem(STORAGE_KEY);
         console.warn('API key exchange notice (falling back to Clerk JWT):', e);
       }
@@ -58,7 +57,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function GuestRoute({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   if (!isLoaded) return null;
-  if (isSignedIn) return <Navigate to="/dashboard/conversation" replace />;
+  if (isSignedIn) return <Navigate to="/batch-select" replace />;
   return <>{children}</>;
 }
 
@@ -73,8 +72,11 @@ export default function App() {
           <Route path="/sign-up" element={<GuestRoute><SignUpPage /></GuestRoute>} />
           <Route path="/forgot-password" element={<GuestRoute><ForgotPasswordPage /></GuestRoute>} />
 
-          {/* Redirect bare /dashboard to conversation tab */}
-          <Route path="/dashboard" element={<Navigate to="/dashboard/conversation" replace />} />
+          {/* Batch selection — shown immediately after login */}
+          <Route path="/batch-select" element={<ProtectedRoute><BatchSelectionPage /></ProtectedRoute>} />
+
+          {/* Redirect bare /dashboard to batch selection */}
+          <Route path="/dashboard" element={<Navigate to="/batch-select" replace />} />
 
           <Route path="/dashboard/:tab"         element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/dashboard/:tab/:subtab" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />

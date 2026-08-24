@@ -27,7 +27,7 @@ export default function Header() {
   const { isLoaded, isSignedIn, user } = useUser() as { isLoaded: boolean; isSignedIn: boolean; user: any };
 
   React.useEffect(() => {
-    if (isLoaded && fetchBatchesFromApi) {
+    if (fetchBatchesFromApi && isLoaded) {
       void fetchBatchesFromApi();
     }
   }, [isLoaded, fetchBatchesFromApi]);
@@ -52,7 +52,8 @@ export default function Header() {
     { path: 'ecr-batch',    label: '04 ECR Batch' },
     { path: 'ips-engine',   label: '05 IPS Engine' },
     { path: 'workspace',    label: '06 Workspace' },
-    { path: 'learning',     label: '07 Learning' }
+    { path: 'learning',     label: '07 Learning' },
+    { path: 'world-model',  label: '08 World Model' }
   ];
 
   const [availableModels, setAvailableModels] = useState<{ value: ModelType; label: string }[]>([
@@ -128,11 +129,10 @@ export default function Header() {
           </button>
         )}
 
-        {tab !== 'conversation' && (
-          <div className="hidden lg:flex items-center gap-3">
-            {/* Batch Switcher */}
+        <div className="flex items-center gap-3">
+            {/* Batch Switcher — visible on all tabs */}
             <div className="relative">
-              <button 
+              <button
                 onClick={() => {
                   setIsBatchOpen(!isBatchOpen);
                   setIsModelOpen(false);
@@ -141,7 +141,7 @@ export default function Header() {
               >
                 <span className="h-1.5 w-1.5 rounded-full bg-brand-indigo animate-pulse shrink-0"></span>
                 <span className="truncate block font-mono font-medium" title={activeBatch.name}>
-                  {activeBatch.name.length > 12 ? `${activeBatch.name.slice(0, 12)}..` : activeBatch.name}
+                  {activeBatch.name.length > 20 ? `${activeBatch.name.slice(0, 20)}..` : activeBatch.name}
                 </span>
                 <ChevronDown className="h-3.5 w-3.5 text-warm-muted shrink-0" />
               </button>
@@ -183,6 +183,8 @@ export default function Header() {
                               setActiveBatch(b.id);
                             }
                             setIsBatchOpen(false);
+                            // Update URL with new batch ID and stay on current tab
+                            navigate(`/dashboard/${tab || 'conversation'}?batch=${b.id}`);
                           }}
                           className="flex items-center gap-2 text-left truncate flex-1 cursor-pointer"
                         >
@@ -225,10 +227,13 @@ export default function Header() {
                 </div>
               )}
             </div>
+          </div>
 
+        {tab !== 'conversation' && (
+          <div className="hidden lg:flex items-center gap-3">
             {/* Model Selector */}
             <div className="relative">
-              <button 
+              <button
                 onClick={async () => {
                   const nextOpen = !isModelOpen;
                   setIsModelOpen(nextOpen);

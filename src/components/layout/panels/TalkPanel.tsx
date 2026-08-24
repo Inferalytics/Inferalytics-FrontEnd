@@ -73,7 +73,7 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
   const displayName = user?.fullName || user?.firstName || user?.primaryEmailAddress?.emailAddress || 'User';
   const firstName = user?.firstName || displayName.split(' ')[0] || 'there';
 
-  const { setScreen, syncBackendState, createBatchApi, batches, activeBatchId, switchBatchApi, setActiveBatch } = useStore();
+  const { setScreen, syncBackendState, createBatchApi, batches, activeBatchId, switchBatchApi, setActiveBatch, addWorldModel, addMessage, conversation } = useStore();
   const navigate = useNavigate();
 
   const [isBatchDropdownOpen, setIsBatchDropdownOpen] = useState(false);
@@ -83,11 +83,31 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
   });
   const [talkMessages, setTalkMessages] = useState<{ sender: 'ai' | 'user'; text: string }[]>([]);
   const [talkInputText, setTalkInputText] = useState('');
-  const [chatBatchId, setChatBatchId] = useState<string | null>(null);
+  const [chatBatchId, setChatBatchId] = useState<string | null>(activeBatchId || null);
   const [chatLoading, setChatLoading] = useState(false);
   const [isCreatingBatch, setIsCreatingBatch] = useState(false);
   const chatEndRef = React.useRef<HTMLDivElement>(null);
   const historyRef = useRef<ConversationTurn[]>([]);
+
+  // Keep chatBatchId in sync when global activeBatchId changes
+  useEffect(() => {
+    if (activeBatchId) {
+      setChatBatchId(activeBatchId);
+    }
+  }, [activeBatchId]);
+
+  // Restore chat messages from Zustand when returning to conversation page
+  useEffect(() => {
+    // Skip the initial AI greeting message (index 0) in conversation store
+    const userMessages = conversation.filter(m => !m.isTyping && !m.chips);
+    if (userMessages.length > 0 && talkMessages.length === 0) {
+      const restored = userMessages.map(m => ({
+        sender: m.role === 'ai' ? 'ai' as const : 'user' as const,
+        text: m.content,
+      }));
+      setTalkMessages(restored);
+    }
+  }, []); // Only on mount
 
   const handleCreateBatchAndNext = async () => {
     const defaultName = `Batch ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
@@ -107,7 +127,7 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
         setChatBatchId(newBatchId);
       }
       triggerToast(`Batch "${batchName}" created! Moving to Blueprint...`);
-      navigate('/dashboard/blueprint/general');
+      navigate(`/dashboard/blueprint/general?batch=${chatBatchId}`);
     } catch (err: any) {
       const detail = err?.response?.data?.detail || err?.message || 'Failed to create batch';
       triggerToast(`Error: ${detail}`);
@@ -196,16 +216,28 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
         { role: 'assistant', content: res.reply },
       ];
 
-      let replyText = res.reply;
-      if (res.tools_used && res.tools_used.length > 0) {
-        const formattedTools = res.tools_used.map(t => {
-          const clean = t.replace(/_/g, ' ');
+      let replyText = res.reply || '';
+      const toolsUsed = Array.isArray(res.tools_used) ? res.tools_used.filter(Boolean) : [];
+      if (toolsUsed.length > 0) {
+        const formattedTools = toolsUsed.map(t => {
+          const clean = String(t).replace(/_/g, ' ');
           return clean.charAt(0).toUpperCase() + clean.slice(1);
         });
         replyText += `\n\n*Executed:* \`${formattedTools.join('`, `')}\``;
       }
 
+      // Handle world_model: use backend field, or parse from reply text as fallback
+      const wm = res.world_model ?? null;
+      if (wm) {
+        addWorldModel(wm);
+      }
+
       setTalkMessages(prev => [...prev, { sender: 'ai', text: replyText }]);
+
+      // Persist to Zustand so messages survive navigation
+      addMessage({ role: 'user', content: userMsg });
+      addMessage({ role: 'ai', content: replyText });
+
       if (res.error) {
         triggerToast(`Agent warning: ${res.error}`);
       }
@@ -214,8 +246,12 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
         await syncBackendState();
       }
 
-      const route = getRouteForTools(res.tools_used);
-      if (route) navigate(route);
+      // Navigate to the relevant dashboard panel based on which tools were used
+      const batchQuery = chatBatchId ? `?batch=${chatBatchId}` : '';
+      const targetRoute = getRouteForTools(toolsUsed) ?? '/dashboard/blueprint/general';
+      setTimeout(() => {
+        navigate(`${targetRoute}${batchQuery}`);
+      }, 1500);
     } catch (err: any) {
       const detail = err?.response?.data?.detail || err?.message || 'Something went wrong. Please try again.';
       setTalkMessages(prev => [...prev, { sender: 'ai', text: `Error: ${detail}` }]);
@@ -343,7 +379,7 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
                               }
                               setChatBatchId(b.id);
                               triggerToast(`Switched to batch "${b.name}"! Moving to Blueprint...`);
-                              navigate('/dashboard/blueprint/general');
+                              navigate(`/dashboard/blueprint/general?batch=${b.id}`);
                             }}
                             className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11.5px] flex items-center justify-between transition-colors cursor-pointer ${
                               b.id === activeBatchId
@@ -417,7 +453,7 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
                   <div className="h-7 w-7 rounded-full bg-lavender flex items-center justify-center shrink-0 border border-warm-border">
                     <Sparkles className="h-3.5 w-3.5 text-brand-indigo" />
                   </div>
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-1.5 flex-1 min-w-0">
                     <span className="text-[11px] font-semibold text-brand-indigo uppercase tracking-wider">Inferalytics AI</span>
                     <div className="text-[13px] text-warm-text leading-relaxed bg-warm-bg/50 p-3.5 rounded-2xl rounded-tl-sm border border-warm-border/50">
                       {renderFormattedText(msg.text)}

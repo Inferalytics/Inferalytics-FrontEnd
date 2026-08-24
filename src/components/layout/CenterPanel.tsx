@@ -9,6 +9,7 @@ import BatchPanel from './panels/BatchPanel';
 import OptimisePanel from './panels/OptimisePanel';
 import ResultsPanel from './panels/ResultsPanel';
 import ComparePanel from './panels/ComparePanel';
+import WorldModelPage from './panels/WorldModelPage';
 
 export default function CenterPanel() {
   const { screen } = useStore();
@@ -37,6 +38,7 @@ export default function CenterPanel() {
         {tab === 'ips-engine' && <OptimisePanel triggerToast={triggerToast} />}
         {tab === 'workspace' && <ResultsPanel />}
         {tab === 'learning' && <ComparePanel triggerToast={triggerToast} />}
+        {tab === 'world-model' && <WorldModelPage />}
       </div>
     </div>
   );

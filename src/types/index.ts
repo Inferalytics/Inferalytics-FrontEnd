@@ -101,6 +101,8 @@ export interface GlobalState {
   egrTarget: number;
   scenarios: Scenario[];
   optimisationResult: OptimisationResult | null;
+  worldModels: import('./api').WorldModel[];
+  addWorldModel: (wm: import('./api').WorldModel) => void;
   selectedProvenanceMetric: string | null;
   setSelectedProvenanceMetric: (metric: string | null) => void;
   provenanceConversations: Record<string, Message[]>;

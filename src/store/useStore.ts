@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { GlobalState, Batch, Message, Relationship, DimensionCard, Scenario, ModelType } from '../types';
+import { GlobalState, Batch, Message, Relationship, DimensionCard, Scenario, ModelType, WorldModel } from '../types';
 import api from '../api';
 
 const INITIAL_PROVENANCE_CONVERSATIONS: Record<string, Message[]> = {};
@@ -53,6 +53,7 @@ export const useStore = create<GlobalState>((set, get) => ({
   egrTarget: 12,
   scenarios: INITIAL_SCENARIOS,
   optimisationResult: null,
+  worldModels: [],
   selectedProvenanceMetric: null,
   provenanceConversations: INITIAL_PROVENANCE_CONVERSATIONS,
   workspaceMetrics: INITIAL_WORKSPACE_METRICS,
@@ -71,7 +72,10 @@ export const useStore = create<GlobalState>((set, get) => ({
       batches: get().batches.map((b) => ({
         ...b,
         status: b.id === id ? 'active' : b.status === 'active' ? 'idle' : b.status
-      }))
+      })),
+      // Clear batch-specific data so previous batch results don't bleed through
+      worldModels: [],
+      scenarios: [],
     });
     if (get().syncBackendState) {
       void get().syncBackendState!();
@@ -83,7 +87,7 @@ export const useStore = create<GlobalState>((set, get) => ({
   },
 
   addMessage: (msg: Message) => {
-    set({ conversation: [...get().conversation, msg] });
+    set({ conversation: [...get().conversation, { ...msg, content: msg.content || '' }] });
   },
 
   toggleSegment: (segment: string) => {
@@ -135,15 +139,18 @@ export const useStore = create<GlobalState>((set, get) => ({
     try {
       const res = await api.listBatches();
       if (res?.data?.batches?.length > 0) {
-        const fetchedBatches = res.data.batches.map((b, i) => ({
+        const currentActiveId = get().activeBatchId;
+        const fetchedBatches = res.data.batches.map((b) => ({
           id: b.batch_id,
           name: b.batch_name,
-          status: (i === 0 ? 'active' : 'idle') as 'active' | 'idle' | 'archived',
+          status: (b.batch_id === currentActiveId ? 'active' : 'idle') as 'active' | 'idle' | 'archived',
         }));
-        set({
-          batches: fetchedBatches,
-          activeBatchId: fetchedBatches[0].id,
-        });
+        // Only override activeBatchId if none is set yet
+        const updates: Partial<GlobalState> = { batches: fetchedBatches };
+        if (!currentActiveId) {
+          updates.activeBatchId = fetchedBatches[0].id;
+        }
+        set(updates as any);
       }
     } catch (err) {
       console.warn('Backend batches not available, using local batches:', err);
@@ -217,7 +224,7 @@ export const useStore = create<GlobalState>((set, get) => ({
     try {
       // 1. Sync EGR Target
       try {
-        const egrRes = await api.getEgr();
+        const egrRes = await api.getEgr().catch(() => null);
         if (egrRes?.data?.egr_value) {
           const pct = (egrRes.data.egr_value - 1) * 100;
           set({ egrTarget: parseFloat(pct.toFixed(2)) });
@@ -226,7 +233,7 @@ export const useStore = create<GlobalState>((set, get) => ({
 
       // 2. Sync Populated Data & Extract Real Blueprint Metadata
       try {
-        const dataRes = await api.retrieveData();
+        const dataRes = await api.retrieveData().catch(() => null);
         if (dataRes?.data?.records?.length > 0) {
           const records = dataRes.data.records;
           const sources = records.map(r => ({
@@ -321,94 +328,7 @@ export const useStore = create<GlobalState>((set, get) => ({
         console.warn('Failed to extract real data content metadata:', err);
       }
 
-      // 3. Sync Fixed Values, Data Time, and Growth Time
-      try {
-        const [fvRes, dtRes, gtRes] = await Promise.allSettled([
-          api.getFixedValues(),
-          api.getDataTime(),
-          api.getGrowthTime(),
-        ]);
 
-        if (dtRes.status === 'fulfilled' && dtRes.value?.data) {
-          const dt = dtRes.value.data;
-          set({
-            setup: {
-              ...get().setup,
-              timeRange: `${dt.start_time} → ${dt.end_time}`,
-              timeGranularity: dt.period_type || 'Quarter',
-            }
-          });
-        }
-      } catch {}
-
-      // 4. Sync Newton-Raphson Optimization Results
-      try {
-        const nrRes = await api.retrieveOptimization();
-        if (nrRes?.data) {
-          const nr = nrRes.data;
-          const targetPct = ((nr.target_egr - 1) * 100).toFixed(2);
-          const finalPct = ((nr.final_egr - 1) * 100).toFixed(2);
-
-          const updatedMetrics = get().workspaceMetrics.map(m => {
-            if (m.name === 'EGR Achieved') {
-              return { ...m, value: `${finalPct}%`, delta: `Target: ${targetPct}%`, dir: 'up' as const };
-            }
-            return m;
-          });
-
-          const currentScenarios = [...get().scenarios];
-          const newScenarioItem = {
-            id: `opt-${Date.now()}`,
-            label: `Backend Optimization Run (${nr.converged === 1 ? 'Converged' : 'Max Iterations'})`,
-            revenue: `$${((nr.optimized_vector?.[0] ?? 2400000) / 1000000).toFixed(2)}M`,
-            yoy: `+${finalPct}%`,
-            egr: `${finalPct}%`,
-            sparkColor: 'green' as const,
-            sparkData: [100, 105, 110, 115, 120, 125, Math.round(100 + parseFloat(finalPct))],
-            checked: true
-          };
-
-          set({
-            workspaceMetrics: updatedMetrics,
-            optimisationResult: {
-              method: 'Newton-Raphson',
-              timestamp: new Date().toLocaleTimeString(),
-              durationMs: 1200,
-              converged: nr.converged === 1,
-              rows: [
-                { name: 'Target Growth', value: `${targetPct}%`, delta: '— target', deltaDir: 'flat' },
-                { name: 'Achieved Growth', value: `${finalPct}%`, delta: nr.converged === 1 ? '✓ Converged' : '⚠ Non-converged', deltaDir: nr.converged === 1 ? 'up' : 'down' },
-                { name: 'Iterations', value: `${nr.iterations}`, delta: `Error: ${nr.convergence_error?.toExponential(2) ?? '0'}`, deltaDir: 'flat' },
-              ],
-              egrAchieved: parseFloat(finalPct),
-              target: parseFloat(targetPct)
-            },
-            scenarios: [newScenarioItem, ...currentScenarios.slice(0, 2)]
-          });
-        }
-      } catch {}
-
-      // 5. Sync Forecast Results
-      try {
-        const fcRes = await api.getForecast();
-        if (fcRes?.data) {
-          const fc = fcRes.data;
-          const currentScenarios = [...get().scenarios];
-          const forecastScenarioItem = {
-            id: `fc-${Date.now()}`,
-            label: `Forecast to ${fc.target_time}`,
-            revenue: `$${(fc.forecasted_value / 1000000).toFixed(2)}M`,
-            yoy: fc.predicted_growth_rate_percentage || '+0%',
-            egr: fc.predicted_growth_rate_percentage || '+0%',
-            sparkColor: 'blue' as const,
-            sparkData: [100, 103, 107, 110, 112, 115],
-            checked: false
-          };
-          set({
-            scenarios: [...currentScenarios, forecastScenarioItem]
-          });
-        }
-      } catch {}
     } catch (err) {
       console.warn('Backend sync failed:', err);
     }
@@ -416,6 +336,49 @@ export const useStore = create<GlobalState>((set, get) => ({
 
   setEgrTarget: (val: number) => {
     set({ egrTarget: val });
+  },
+
+  addWorldModel: (wm: WorldModel) => {
+    // Dedupe by scenario_id
+    const existing = get().worldModels;
+    const filtered = existing.filter(w => w.scenario_id !== wm.scenario_id);
+    set({ worldModels: [...filtered, wm] });
+
+    // Convert WorldModel → Scenario for ResultsPanel/ComparePanel
+    const opt = wm.optimization_result;
+    const finalPct = parseFloat((opt.final_egr_percentage || '').replace(/[^0-9.\-]/g, '')) || 0;
+    const newScenario: Scenario = {
+      id: wm.scenario_id,
+      label: wm.scenario_label || `Scenario ${wm.scenario_number}`,
+      revenue: '—',
+      yoy: opt.final_egr_percentage,
+      egr: opt.final_egr_percentage,
+      sparkColor: 'green',
+      sparkData: [100, 105, 110, 115, 120, Math.round(100 + finalPct)],
+      checked: true,
+    };
+
+    const currentScenarios = get().scenarios.filter(s => s.id !== wm.scenario_id);
+    set({ scenarios: [newScenario, ...currentScenarios.slice(0, 4)] });
+
+    // Update optimisationResult
+    const targetPct = parseFloat((wm.egr_target_percentage || '').replace(/[^0-9.\-]/g, '')) || 0;
+    set({
+      egrTarget: targetPct,
+      optimisationResult: {
+        method: wm.optimization_method || 'Newton-Raphson',
+        timestamp: new Date().toLocaleTimeString(),
+        durationMs: 0,
+        converged: opt.converged,
+        rows: [
+          { name: 'Target Growth', value: wm.egr_target_percentage, delta: '— target', deltaDir: 'flat' },
+          { name: 'Achieved Growth', value: opt.final_egr_percentage, delta: wm.status === 'converged' ? 'Converged' : 'Non-converged', deltaDir: wm.status === 'converged' ? 'up' : 'down' },
+          { name: 'Iterations', value: `${opt.iterations}`, delta: `Error: ${opt.convergence_error?.toExponential(2) ?? '0'}`, deltaDir: 'flat' },
+        ],
+        egrAchieved: finalPct,
+        target: targetPct,
+      },
+    });
   },
 
   toggleScenarioChecked: (id: string) => {

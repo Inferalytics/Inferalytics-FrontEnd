@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate, useSearchParams, Navigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import Header from './Header';
 import LeftPanel from './LeftPanel';
 import CenterPanel from './CenterPanel';
 import RightPanel from './RightPanel';
+import api from '../../api';
 
 // Sync dictionary mapping nested route slugs to spec screens
 const routeTabMap: Record<string, number> = {
@@ -14,35 +15,64 @@ const routeTabMap: Record<string, number> = {
   'ecr-batch': 4,
   'ips-engine': 5,
   workspace: 6,
-  learning: 7
+  learning: 7,
+  'world-model': 8
 };
 
 export default function Shell() {
   const { tab, subtab } = useParams<{ tab: string; subtab?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { 
-    setScreen, 
-    leftSidebarOpen, 
-    setLeftSidebarOpen, 
-    rightSidebarOpen, 
+  const {
+    setScreen,
+    leftSidebarOpen,
+    setLeftSidebarOpen,
+    rightSidebarOpen,
     setRightSidebarOpen,
     activeBatchId,
     setActiveBatch,
     batches
   } = useStore();
 
-  // 1. Sync batch query param from URL on page load / refresh
+  // ── Batch gate: redirect to /batch-select if no batch is active ──
+  const [batchChecked, setBatchChecked] = useState(false);
+  const [shouldRedirect, setShouldRedirect] = useState(false);
+
   useEffect(() => {
     const urlBatchId = searchParams.get('batch');
-    if (urlBatchId && urlBatchId !== activeBatchId) {
-      setActiveBatch(urlBatchId);
-    }
-  }, [searchParams]);
 
-  // 2. Keep URL query param synced whenever activeBatchId changes
+    // If Zustand already has an active batch, trust it (user just switched)
+    if (activeBatchId) {
+      setBatchChecked(true);
+      return;
+    }
+
+    // No active batch in Zustand — try URL param
+    if (urlBatchId) {
+      setActiveBatch(urlBatchId);
+      setBatchChecked(true);
+      return;
+    }
+
+    // Neither state nor URL has a batch — ask the backend
+    void (async () => {
+      try {
+        const session = await api.getBatchSession();
+        if (session.active_batch) {
+          setActiveBatch(session.active_batch.batch_id);
+          setBatchChecked(true);
+        } else {
+          setShouldRedirect(true);
+        }
+      } catch {
+        setShouldRedirect(true);
+      }
+    })();
+  }, [activeBatchId, searchParams, setActiveBatch]);
+
+  // Keep URL query param synced whenever activeBatchId changes
   useEffect(() => {
-    if (activeBatchId && searchParams.get('batch') !== activeBatchId) {
+    if (batchChecked && activeBatchId && searchParams.get('batch') !== activeBatchId) {
       setSearchParams(
         prev => {
           const newParams = new URLSearchParams(prev);
@@ -52,10 +82,9 @@ export default function Shell() {
         { replace: true }
       );
     }
-  }, [activeBatchId, searchParams, setSearchParams]);
+  }, [activeBatchId, batchChecked, searchParams, setSearchParams]);
 
   useEffect(() => {
-    // Automatically synchronize browser route parameters with Zustand store
     if (tab && routeTabMap[tab]) {
       setScreen(routeTabMap[tab]);
     }
@@ -63,6 +92,7 @@ export default function Shell() {
 
   // Canonical redirection for nested views that have default subtabs
   useEffect(() => {
+    if (!batchChecked) return;
     const batchQuery = activeBatchId ? `?batch=${activeBatchId}` : '';
     if (tab === 'blueprint' && !subtab) {
       navigate(`/dashboard/blueprint/general${batchQuery}`, { replace: true });
@@ -71,7 +101,7 @@ export default function Shell() {
     } else if (tab === 'workspace' && !subtab) {
       navigate(`/dashboard/workspace/summary${batchQuery}`, { replace: true });
     }
-  }, [tab, subtab, navigate, activeBatchId]);
+  }, [tab, subtab, navigate, activeBatchId, batchChecked]);
 
   // Close mobile drawers on mount and when navigating between tabs on small viewports
   useEffect(() => {
@@ -84,6 +114,15 @@ export default function Shell() {
     handleCheckMobile();
   }, [tab, subtab, setLeftSidebarOpen, setRightSidebarOpen]);
 
+  // ── Conditional renders (after all hooks) ──
+  if (shouldRedirect) {
+    return <Navigate to="/batch-select" replace />;
+  }
+
+  if (!batchChecked) {
+    return null;
+  }
+
   // Hide side panels on screen 01 (talk) to maintain full bleed conversation grid
   const showPanels = tab !== 'conversation';
 
@@ -91,20 +130,20 @@ export default function Shell() {
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-warm-gradient select-none">
       {/* 48px Header */}
       <Header />
-      
+
       {/* Content Columns */}
       <div className="flex flex-1 w-full h-[calc(100vh-48px)] overflow-hidden relative">
         {/* Backdrop for Left Sidebar */}
         {showPanels && leftSidebarOpen && (
-          <div 
+          <div
             onClick={() => setLeftSidebarOpen(false)}
             className="fixed inset-0 bg-[#2C2B29]/15 backdrop-blur-[1px] z-30 lg:hidden"
           />
         )}
-        
+
         {/* Backdrop for Right Sidebar */}
         {showPanels && rightSidebarOpen && (
-          <div 
+          <div
             onClick={() => setRightSidebarOpen(false)}
             className="fixed inset-0 bg-[#2C2B29]/15 backdrop-blur-[1px] z-30 lg:hidden"
           />

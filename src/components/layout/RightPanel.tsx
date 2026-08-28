@@ -5,7 +5,8 @@ import { Sparkles, Send, RefreshCw, Paperclip } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ProvenanceInspector from './ProvenanceInspector';
 import api from '../../api';
-import { getRouteForTools } from '../../lib/agentNavigation';
+import { getRouteForTools, detectFlow, shouldRefreshForecast, isFullScenarioRequest, hasExplicitPipelineParams, buildFullScenarioPrompt } from '../../lib/agentNavigation';
+import { setForecastPageCache } from '../../store/useStore';
 
 const renderFormattedText = (content: string | undefined | null) => {
   if (!content) return null;
@@ -98,6 +99,12 @@ export default function RightPanel() {
     createBatchApi,
     addWorldModel,
     worldModels,
+    setLatestForecast,
+    addForecastScenario,
+    setForecastScenarios,
+    latestForecast,
+    egrTarget,
+    setPipelineStage,
   } = useStore();
 
   const { tab } = useParams<{ tab: string }>();
@@ -110,13 +117,107 @@ export default function RightPanel() {
 
   const sendMessage = async (userText: string) => {
     if (!userText.trim()) return;
+
+    // ── Full scenario: step through Forecast → IPS Engine → World Model ─────
+    if (isFullScenarioRequest(userText)) {
+      addMessage({ role: 'user', content: userText });
+      setIsOptimizing(true);
+
+      let targetBatchId = activeBatchId;
+      const isUuid = targetBatchId && /^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$/.test(targetBatchId);
+      if (!isUuid) {
+        if (createBatchApi) {
+          const defaultName = `Batch ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+          targetBatchId = await createBatchApi(defaultName);
+        } else {
+          const defaultName = `Batch ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+          const createRes = await api.createBatch(defaultName);
+          targetBatchId = createRes.data.batch_id;
+          await api.switchBatch(targetBatchId);
+        }
+      }
+
+      const batchQ  = targetBatchId ? `?batch=${targetBatchId}` : '';
+      const batchSep = batchQ ? '&' : '?';
+      const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+      // Snapshot existing scenarios for this batch before the API call
+      const batchModelsBefore = worldModels.filter(wm => wm.batch_id === targetBatchId);
+      const batchForecast = (latestForecast?.batch_id === targetBatchId) ? latestForecast : null;
+      const lastWM = batchModelsBefore[batchModelsBefore.length - 1];
+
+      // If user gave explicit period/rate → use their raw message.
+      // Otherwise (e.g. "run another scenario") → reuse existing forecast + rotate strategy.
+      const agentPrompt = hasExplicitPipelineParams(userText)
+        ? userText
+        : buildFullScenarioPrompt({
+            hasForecast: !!batchForecast,
+            forecastValue: batchForecast?.forecasted_value,
+            forecastPeriod: batchForecast?.target_time,
+            lastStrategy: lastWM?.growth_strategy,
+            egrTarget,
+          });
+
+      try {
+        // Navigate to forecast page (computing animation plays while API runs)
+        setPipelineStage('forecast');
+        navigate(`/dashboard/forecast${batchQ}`);
+
+        const apiCall = api.agentChat({ message: agentPrompt, batch_id: targetBatchId, conversation_history: historyRef.current });
+        const [res] = await Promise.all([apiCall, wait(3000)]);
+
+        // Store results
+        const wm = res.world_model ?? null;
+        if (wm) addWorldModel(wm);
+        const replyText = res.reply || '';
+        // Store original user text in history (not built prompt) for clean context
+        historyRef.current = [...historyRef.current, { role: 'user', content: userText }, { role: 'assistant', content: replyText }];
+        addMessage({ role: 'ai', content: replyText });
+
+        if (syncBackendState) await syncBackendState();
+
+        // Cache forecast data so ForecastPage renders instantly when stage clears
+        try {
+          const saved = await api.getForecastScenarios();
+          if (saved?.has_results && saved.scenarios?.length > 0) {
+            setForecastScenarios(saved.scenarios as any);
+            setForecastPageCache(saved as any);
+          }
+        } catch {}
+
+        // Step 1 — Show Forecast Results (2.5 s)
+        setPipelineStage(null);
+        await wait(2500);
+
+        // Step 2 — IPS Engine (2.5 s)
+        navigate(`/dashboard/ips-engine${batchQ}`);
+        await wait(2500);
+
+        // Step 3 — World Model
+        navigate(`/dashboard/world-model${batchQ}`);
+
+        // Step 4 — Compare (if batch now has >1 scenario)
+        const totalAfter = batchModelsBefore.length + (wm ? 1 : 0);
+        if (totalAfter > 1) {
+          await wait(2500);
+          navigate(`/dashboard/world-model${batchQ}${batchSep}view=compare`);
+        }
+      } catch (err: any) {
+        setPipelineStage(null);
+        const detail = err?.response?.data?.detail || err?.message || 'Full scenario failed';
+        addMessage({ role: 'ai', content: `Error: ${detail}` });
+      } finally {
+        setIsOptimizing(false);
+      }
+      return;
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     addMessage({ role: 'user', content: userText });
 
     try {
       setIsOptimizing(true);
 
       let targetBatchId = activeBatchId;
-      // Valid UUID check: hex format 8-4-4-4-12 or 32 hex chars
       const isUuid = targetBatchId && /^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$/.test(targetBatchId);
 
       if (!isUuid) {
@@ -153,22 +254,52 @@ export default function RightPanel() {
         replyContent += `\n\n*Executed:* \`${formattedTools.join('`, `')}\``;
       }
 
+      // Flow detection — determines routing and what to refresh
+      const flow = detectFlow(toolsUsed);
+
+      // World model (Flow B or C)
       const wm = res.world_model ?? null;
-      if (wm) {
-        addWorldModel(wm);
-      }
+      if (wm) addWorldModel(wm);
 
       addMessage({ role: 'ai', content: replyContent });
 
-
-      // Automatically sync all backend data tables and metrics
       if (syncBackendState) {
         await syncBackendState();
       }
 
-      // Jump to the tab that shows this turn's real result
-      const route = getRouteForTools(toolsUsed);
-      if (route) navigate(route);
+      // Forecast refresh (Flow A always; Flow C only if forecast wasn't skipped)
+      if (shouldRefreshForecast(toolsUsed, res.forecast?.forecast_skipped)) {
+        try {
+          const saved = await api.getForecastScenarios();
+          if (saved.has_results && saved.scenarios.length > 0) {
+            setForecastScenarios(saved.scenarios.map(s => ({
+              scenario_number: s.scenario_number,
+              target_time: s.target_period,
+              forecasted_value: s.forecasted_value,
+              last_known_value: s.comparison_value ?? undefined,
+              predicted_growth_rate_percentage: s.predicted_growth_rate_percentage ?? '',
+              predicted_growth_rate: s.predicted_growth_rate ?? undefined,
+              comparison_period: s.comparison_period ?? undefined,
+              comparison_value: s.comparison_value ?? undefined,
+            })) as any);
+            setLatestForecast(undefined as any);
+          }
+        } catch {}
+      }
+
+      // Navigate to the page that shows this turn's result
+      const batchQ = activeBatchId ? `?batch=${activeBatchId}` : '';
+      let navRoute: string | null = null;
+      if (flow === 'C' || flow === 'B' || wm) {
+        navRoute = `/dashboard/world-model${batchQ}`;
+      } else {
+        const base = getRouteForTools(toolsUsed);
+        if (base) {
+          const sep = base.includes('?') ? '&' : '?';
+          navRoute = activeBatchId ? `${base}${sep}batch=${activeBatchId}` : base;
+        }
+      }
+      if (navRoute) navigate(navRoute);
     } catch (err: any) {
       console.warn('Agent call error in RightPanel:', err);
       const detail = err?.response?.data?.detail || err?.message || 'Something went wrong. Please try again.';
@@ -220,7 +351,7 @@ export default function RightPanel() {
       setIsOptimizing(true);
       runScenarioB(() => {
         setIsOptimizing(false);
-        navigate('/dashboard/learning');
+        navigate('/dashboard/world-model');
       });
     }
   };

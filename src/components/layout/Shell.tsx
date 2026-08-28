@@ -14,7 +14,7 @@ const routeTabMap: Record<string, number> = {
   'ecr-build': 3,
   'ecr-batch': 4,
   'ips-engine': 5,
-  workspace: 6,
+  forecast: 6,
   learning: 7,
   'world-model': 8
 };
@@ -47,9 +47,11 @@ export default function Shell() {
       return;
     }
 
-    // No active batch in Zustand — try URL param
+    // No active batch in Zustand — try URL param (only set if different to avoid clearing data)
     if (urlBatchId) {
-      setActiveBatch(urlBatchId);
+      if (urlBatchId !== activeBatchId) {
+        setActiveBatch(urlBatchId);
+      }
       setBatchChecked(true);
       return;
     }
@@ -120,11 +122,14 @@ export default function Shell() {
   }
 
   if (!batchChecked) {
-    return null;
+    return (
+      <div className="flex items-center justify-center h-screen w-screen bg-warm-gradient">
+        <div className="animate-spin h-8 w-8 border-2 border-brand-indigo border-t-transparent rounded-full" />
+      </div>
+    );
   }
 
-  // Hide side panels on screen 01 (talk) to maintain full bleed conversation grid
-  const showPanels = tab !== 'conversation';
+  const showPanels = true;
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-warm-gradient select-none">

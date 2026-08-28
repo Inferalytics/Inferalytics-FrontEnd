@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { FolderUp, Plus, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function LeftPanel() {
@@ -39,16 +39,6 @@ export default function LeftPanel() {
       console.error('Failed to create batch:', err);
     } finally {
       setIsCreatingBatch(false);
-    }
-  };
-
-  const handleUploadClick = () => {
-    if (screen === 1) {
-      navigate('/dashboard/blueprint');
-    } else if (screen === 2) {
-      navigate('/dashboard/ecr-build');
-    } else if (screen === 3) {
-      navigate('/dashboard/ecr-batch');
     }
   };
 
@@ -197,32 +187,6 @@ export default function LeftPanel() {
           </div>
         )}
 
-        {screen === 4 && <hr className="border-warm-border/40" />}
-
-        {/* Upload Zone */}
-        <div className="flex flex-col gap-3">
-          <span className="text-[10px] font-bold text-warm-muted uppercase tracking-[0.08em] select-none">
-            Upload Data
-          </span>
-
-          <div
-            onClick={handleUploadClick}
-            className="border-2 border-dashed border-warm-border hover:border-brand-indigo/60 hover:bg-lavender/5 p-4 rounded-xl flex flex-col items-center justify-center gap-2.5 text-center cursor-pointer transition-all duration-200"
-          >
-            <div className="h-8 w-8 rounded-full bg-secondary flex items-center justify-center border border-warm-border/50">
-              <FolderUp className="h-4 w-4 text-warm-muted" />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[11.5px] font-semibold text-warm-text">
-                Drop CSV / XLSX / JSON
-              </span>
-              <span className="text-[9px] text-warm-muted font-mono font-medium tracking-tight">
-                or click to browse
-              </span>
-            </div>
-          </div>
-
-        </div>
       </div>
 
       {/* Brand Watermark / Footer info */}

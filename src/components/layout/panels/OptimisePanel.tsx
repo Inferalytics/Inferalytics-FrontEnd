@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { RotateCw, Play, Pin, ChevronDown, TrendingUp, Link2, RefreshCw } from 'lucide-react';
+import { RotateCw, Play, Pin, ChevronDown, TrendingUp, Link2, RefreshCw, Zap } from 'lucide-react';
 import { useStore } from '../../../store/useStore';
 import { directBezier } from './bezierUtils';
 import { ModelType } from '../../../types';
@@ -61,7 +61,7 @@ const SOLVER_OPTIONS: { value: ModelType; label: string; desc: string }[] = [
 ];
 
 export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
-  const { setup, egrTarget, setEgrTarget, runOptimisation, model, setModel, activeBatchId, addMessage, syncBackendState, optimisationResult } = useStore();
+  const { setup, egrTarget, setEgrTarget, runOptimisation, model, setModel, activeBatchId, addMessage, syncBackendState, optimisationResult, setLatestForecast, latestForecast, worldModels, runFullScenario, pipelineStage } = useStore();
   const navigate = useNavigate();
 
   // Dynamically derive dimension cards from setup parameters & segments or default
@@ -92,70 +92,80 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
       id: 'egr',
       name: 'EGR Estimate',
       type: 'numeric',
-      samples: [`target: ${egrTarget}%`],
+      samples: [`target: ${egrTarget}%`], // overridden by getCardSamples when forecast is active
     });
 
     return items;
   }, [setup.parameters, setup.segments, setup.timeRange, egrTarget]);
 
-  // Compute clean layout grid positions dynamically based on real items count
+  // Compute clean layout grid positions dynamically based on real items count.
+  // Layout: Quarter (top-left) → params (top row) → segments (middle row) → EGR (bottom centre).
   const dynamicPositions = React.useMemo(() => {
     const pos: Record<string, { x: number; y: number }> = {};
-    const cols = 3;
-    const colWidth = 240;
-    const rowHeight = 180;
+    const qtr    = dynamicDimensions.find(d => d.id === 'qtr');
+    const params  = dynamicDimensions.filter(d => d.id.startsWith('param-'));
+    const segs    = dynamicDimensions.filter(d => d.id.startsWith('seg-'));
 
-    dynamicDimensions.forEach((dim, idx) => {
-      if (dim.id === 'egr') {
-        // Position EGR centered at bottom
-        pos[dim.id] = { x: 280, y: 380 };
-      } else {
-        const c = idx % cols;
-        const r = Math.floor(idx / cols);
-        pos[dim.id] = { x: 40 + c * colWidth, y: 80 + r * rowHeight };
-      }
+    const COL_W = 230;
+    const ROW_H = 170;
+    const LEFT  = 40;
+    const ROW1  = 60;   // Quarter + params
+    const ROW2  = ROW1 + ROW_H; // segments
+    const ROW3  = ROW2 + ROW_H; // EGR
+
+    // Row 1: Quarter at col 0, then params
+    if (qtr) pos[qtr.id] = { x: LEFT, y: ROW1 };
+    params.forEach((p, i) => {
+      pos[p.id] = { x: LEFT + (i + 1) * COL_W, y: ROW1 };
     });
+
+    // Row 2: Segments spread across the same columns as params (centred under them)
+    const segStartCol = params.length > 0 ? 0 : 0;
+    segs.forEach((s, i) => {
+      pos[s.id] = { x: LEFT + (segStartCol + i) * COL_W, y: ROW2 };
+    });
+
+    // Row 3: EGR centred under the params/segs cluster
+    const totalCols = Math.max(params.length + 1, segs.length);
+    const egrX = LEFT + Math.floor(totalCols / 2) * COL_W;
+    pos['egr'] = { x: egrX, y: ROW3 };
+
     return pos;
   }, [dynamicDimensions]);
 
-  // Auto-connect dynamic dataset cards (Quarter -> Parameters -> Segments -> EGR)
+  // Auto-connect dynamic dataset cards:
+  //   Quarter → each param (time axis)
+  //   each param → each segment (breakdown axis)
+  //   all params + all segs → EGR (target)
   const dynamicConnections = React.useMemo(() => {
     const conns: Connection[] = [];
-    const qtr = dynamicDimensions.find(d => d.id === 'qtr');
-    const params = dynamicDimensions.filter(d => d.id.startsWith('param-'));
-    const segs = dynamicDimensions.filter(d => d.id.startsWith('seg-'));
-    const egr = dynamicDimensions.find(d => d.id === 'egr');
+    const qtr    = dynamicDimensions.find(d => d.id === 'qtr');
+    const params  = dynamicDimensions.filter(d => d.id.startsWith('param-'));
+    const segs    = dynamicDimensions.filter(d => d.id.startsWith('seg-'));
+    const egr    = dynamicDimensions.find(d => d.id === 'egr');
 
-    if (qtr && params.length > 0) {
-      conns.push({ id: `${qtr.id}-${params[0].id}`, from: qtr.id, to: params[0].id, color: '#6E69BE', weight: 2.0, dashed: false, isDefault: true });
-    }
-
-    params.forEach((p, pIdx) => {
-      if (segs[pIdx]) {
-        conns.push({ id: `${p.id}-${segs[pIdx].id}`, from: p.id, to: segs[pIdx].id, color: '#6E69BE', weight: 2.0, dashed: false, isDefault: true });
-      }
-      if (egr) {
-        conns.push({ id: `${p.id}-${egr.id}`, from: p.id, to: egr.id, color: '#6E69BE', weight: 2.0, dashed: false, isDefault: true });
-      }
+    // Quarter → every param (solid indigo — time drives the metric)
+    params.forEach(p => {
+      if (qtr) conns.push({ id: `${qtr.id}-${p.id}`, from: qtr.id, to: p.id, color: '#6E69BE', weight: 2.0, dashed: false, isDefault: true });
     });
 
-    segs.forEach((s) => {
-      if (egr) {
-        conns.push({ id: `${s.id}-${egr.id}`, from: s.id, to: egr.id, color: '#FF5A1F', weight: 1.6, dashed: true, isDefault: true });
-      }
+    // Each param → each segment (how params break down by dimension)
+    params.forEach(p => {
+      segs.forEach(s => {
+        conns.push({ id: `${p.id}-${s.id}`, from: p.id, to: s.id, color: '#6E69BE', weight: 1.6, dashed: false, isDefault: true });
+      });
+    });
+
+    // All params + all segments → EGR (every input drives the target)
+    params.forEach(p => {
+      if (egr) conns.push({ id: `${p.id}-${egr.id}`, from: p.id, to: egr.id, color: '#6E69BE', weight: 2.0, dashed: false, isDefault: true });
+    });
+    segs.forEach(s => {
+      if (egr) conns.push({ id: `${s.id}-${egr.id}`, from: s.id, to: egr.id, color: '#6E69BE', weight: 1.8, dashed: false, isDefault: true });
     });
 
     return conns;
   }, [dynamicDimensions]);
-
-  const getCardSamples = (card: { id: string; name: string; type: string; samples: string[] }) => {
-    if (card.id === 'egr') {
-      return optimisationResult
-        ? [`target: ${egrTarget}%`, `achieved: ${optimisationResult.egrAchieved}%`]
-        : [`target: ${egrTarget}%`, 'not yet computed'];
-    }
-    return card.samples;
-  };
 
   const [isOptimizing,    setIsOptimizing]    = useState(false);
   const [positions,       setPositions]       = useState(INITIAL_POSITIONS);
@@ -169,7 +179,65 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
   const [forecastLoading, setForecastLoading] = useState(false);
   const [realForecast,    setRealForecast]    = useState<ForecastData | null>(null);
   const [forecastError,   setForecastError]   = useState<string | null>(null);
+
+  // Flow C: only use latestForecast if it belongs to this batch
+  const batchLatestForecast = (activeBatchId && latestForecast?.batch_id === activeBatchId)
+    ? latestForecast : null;
+  const activeForecast = realForecast ?? batchLatestForecast;
+
+  // Only use world models from the active batch
+  const batchWorldModels = activeBatchId
+    ? worldModels.filter(wm => wm.batch_id === activeBatchId)
+    : worldModels;
+  const latestWorldModel = batchWorldModels.length > 0 ? batchWorldModels[batchWorldModels.length - 1] : null;
+
   const [linkSource,      setLinkSource]      = useState<string | null>(null);
+
+  const getCardSamples = (card: { id: string; name: string; type: string; samples: string[] }) => {
+    const opt = latestWorldModel;
+
+    // ── EGR Target card ──────────────────────────────────────────────────────
+    if (card.id === 'egr') {
+      if (activeForecast) {
+        const fv = activeForecast.forecasted_value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        const strategyLabel = opt?.scenario_label || opt?.growth_strategy?.replace(/_/g, ' ') || null;
+        const converged = opt?.status === 'converged';
+        return [
+          `target: ${fv}`,
+          `period: ${activeForecast.target_time}`,
+          ...(strategyLabel ? [`strategy: ${strategyLabel}`] : []),
+          ...(optimisationResult ? [`achieved: ${optimisationResult.egrAchieved}% ${converged ? '✓' : ''}`] : [`status: run optimisation`]),
+        ];
+      }
+      return optimisationResult
+        ? [`target: ${egrTarget}%`, `achieved: ${optimisationResult.egrAchieved}%`]
+        : [`target: ${egrTarget}%`, 'not yet computed'];
+    }
+
+    // ── Parameter (Driver) cards ─────────────────────────────────────────────
+    if (card.id.startsWith('param-') && opt) {
+      const p = opt.optimization_params;
+      const r = opt.optimization_result;
+      return [
+        ...(p ? [`lr: ${p.learning_rate}  ·  scale: ${p.scale_factor}`] : []),
+        ...(r ? [`iterations: ${r.iterations}  ·  err: ${r.convergence_error?.toExponential(2) ?? '—'}`] : []),
+        ...(opt.de_decision?.vector_modification ? [`vec: ${opt.de_decision.vector_modification}`] : []),
+      ].filter(Boolean);
+    }
+
+    // ── Segment (Modifier) cards ─────────────────────────────────────────────
+    if (card.id.startsWith('seg-') && opt?.distribution_difference) {
+      const d = opt.distribution_difference;
+      return [
+        `MARD: ${d.mard_percentage}`,
+        `cos similarity: ${d.cosine_similarity?.toFixed(4) ?? '—'}`,
+        `validation: ${d.validation_verdict ?? '—'}`,
+      ];
+    }
+
+    return card.samples;
+  };
+
   const [mousePos,        setMousePos]        = useState({ x: 0, y: 0 });
   const [hoveredConn,     setHoveredConn]     = useState<string | null>(null);
   const [edgeHoverId,     setEdgeHoverId]     = useState<string | null>(null);
@@ -271,9 +339,38 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
   // ── Reset connections ──────────────────────────────────────────────────────
   const resetConnections = () => setConnections(dynamicConnections);
 
-  const canvasHeight = Math.max(640, ...Object.values(positions).map(p => p.y + CARD_H + 60));
+  const canvasHeight = Math.max(420, ...Object.values(positions).map(p => p.y + CARD_H + 40));
+  const [insightsOpen, setInsightsOpen] = useState(true);
   const currentSolver = SOLVER_OPTIONS.find(s => s.value === model) ?? SOLVER_OPTIONS[0];
   const customCount = connections.filter(c => !c.isDefault).length;
+
+  if (pipelineStage === 'ips') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-5 text-center max-w-[920px] mx-auto pt-4">
+        <div className="relative h-16 w-16">
+          <div className="absolute inset-0 rounded-2xl bg-brand-indigo/10 flex items-center justify-center">
+            <Zap className="h-8 w-8 text-brand-indigo" />
+          </div>
+          <div className="absolute -inset-1 rounded-2xl border-2 border-brand-indigo/30 animate-ping" />
+        </div>
+        <div>
+          <h2 className="text-[18px] font-bold text-warm-text mb-1">Newton-Raphson Optimisation Running…</h2>
+          <p className="text-[13px] text-warm-muted max-w-sm leading-relaxed">
+            Iterating to find the growth factor that achieves your {egrTarget}% EGR target.
+            The balanced strategy is distributing adjustments uniformly across all historical periods.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 w-full max-w-xs">
+          {['Applying growth strategy across quarters', `Converging toward EGR = ${(1 + egrTarget / 100).toFixed(2)}`, 'Building World Model factor tree'].map((step, i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-2 rounded-xl bg-white border border-warm-border shadow-sm">
+              <div className="h-4 w-4 rounded-full border-2 border-brand-indigo border-t-transparent animate-spin shrink-0" style={{ animationDelay: `${i * 0.2}s` }} />
+              <span className="text-[11.5px] text-warm-text font-medium">{step}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4 animate-float-up w-full max-w-[920px] mx-auto pt-4">
@@ -379,6 +476,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
                 setForecastError(null);
                 const fcRes = await api.forecast();
                 setRealForecast(fcRes.data);
+                setLatestForecast(fcRes.data);
                 if (syncBackendState) {
                   await syncBackendState();
                 }
@@ -402,7 +500,10 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
                 setIsOptimizing(true);
 
                 // Pass optimization request to Data Ops AI agent
-                const userPrompt = `Run optimisation inference using ${model} solver against ${egrTarget}% EGR target`;
+                // Flow C: if a forecast is active, use its predicted value as the target
+                const userPrompt = activeForecast
+                  ? `Run optimisation inference using ${model} solver to achieve the forecasted value of ${activeForecast.forecasted_value.toLocaleString(undefined, { maximumFractionDigits: 2 })} for period ${activeForecast.target_time} (predicted growth rate: ${activeForecast.predicted_growth_rate_percentage}). Identify the data changes, drivers, and strategies required to reach this forecast target.`
+                  : `Run optimisation inference using ${model} solver against ${egrTarget}% EGR target`;
                 addMessage({ role: 'user', content: userPrompt });
 
                 const agentRes = await api.agentChat({
@@ -423,7 +524,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
 
                 runOptimisation(() => {
                   setIsOptimizing(false);
-                  navigate('/dashboard/workspace/summary');
+                  navigate('/dashboard/world-model');
                 });
               } catch (err: any) {
                 console.warn('Agent optimization execution notice:', err);
@@ -436,6 +537,32 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
             {isOptimizing ? <RotateCw className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3 fill-current" />}
             Run Optimisation (Inference)
           </button>
+          {latestWorldModel && optimisationResult && (
+            <button
+              onClick={() => setInsightsOpen(o => !o)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-xl text-[11.5px] font-semibold transition-colors cursor-pointer ${
+                insightsOpen
+                  ? 'border-brand-indigo bg-brand-indigo/10 text-brand-indigo'
+                  : 'border-warm-border bg-white hover:bg-secondary text-warm-text'
+              }`}
+            >
+              <TrendingUp className="h-3 w-3" />
+              {insightsOpen ? 'Hide insights' : 'Show insights'}
+            </button>
+          )}
+          {runFullScenario && (
+            <button
+              onClick={() => {
+                const batchQuery = activeBatchId ? `?batch=${activeBatchId}` : '';
+                void runFullScenario({ navigate, triggerToast, batchQuery });
+              }}
+              disabled={isOptimizing}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-[11.5px] font-bold shadow-sm transition-colors cursor-pointer"
+            >
+              <Zap className="h-3 w-3" />
+              Run Full Scenario
+            </button>
+          )}
         </div>
       </div>
 
@@ -488,11 +615,21 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
 
           <div className="px-4 py-2 bg-sage-light/40 border-t border-sage-border/40 text-[10.5px] font-sans flex items-center justify-end">
             <span className="text-brand-indigo font-semibold hover:underline cursor-pointer"
-              onClick={() => {
+              onClick={async () => {
                 setIsOptimizing(true);
+                if (realForecast) {
+                  // Flow C: log forecast-as-target optimization intent
+                  const fcPrompt = `Lock forecast target of ${realForecast.forecasted_value.toLocaleString(undefined, { maximumFractionDigits: 2 })} for ${realForecast.target_time} and run full IPS inference to determine required data changes and strategies.`;
+                  addMessage({ role: 'user', content: fcPrompt });
+                  try {
+                    await api.agentChat({ message: fcPrompt, batch_id: activeBatchId || '' }).then(r => {
+                      addMessage({ role: 'ai', content: r.reply });
+                    });
+                  } catch { /* non-blocking */ }
+                }
                 runOptimisation(() => {
                   setIsOptimizing(false);
-                  navigate('/dashboard/workspace/summary');
+                  navigate('/dashboard/world-model');
                 });
               }}>
               Lock & run full IPS inference →
@@ -553,6 +690,17 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
             const isHighlighted = conn.from === selectedId || conn.to === selectedId;
             const isHovered     = hoveredConn === conn.id;
 
+            // Flow C: connections feeding into EGR get special "contribution" styling
+            const isContrib = !!activeForecast && conn.to === 'egr';
+            const lineColor  = isHovered ? '#EF4444' : isContrib ? '#6E69BE' : conn.color;
+            const lineWeight = isContrib ? 2.8 : (isHighlighted ? conn.weight + 0.7 : conn.weight);
+            const lineDash   = isContrib ? undefined : (conn.dashed ? '5 4' : undefined);
+            const lineOpacity = isHovered ? 1 : isContrib ? 0.85 : (isHighlighted ? 1 : 0.6);
+
+            // Midpoint for contribution label
+            const midX = (fp.x + CARD_W + tp.x) / 2;
+            const midY = (fp.y + CARD_H / 2 + tp.y + CARD_H / 2) / 2;
+
             return (
               <g
                 key={conn.id}
@@ -566,29 +714,54 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
                 {/* Visible line */}
                 <path
                   d={computePath(fp, tp)}
-                  stroke={isHovered ? '#EF4444' : conn.color}
-                  strokeWidth={isHighlighted ? conn.weight + 0.7 : conn.weight}
-                  strokeOpacity={isHighlighted || isHovered ? 1 : 0.6}
+                  stroke={lineColor}
+                  strokeWidth={lineWeight}
+                  strokeOpacity={lineOpacity}
                   fill="none"
-                  strokeDasharray={conn.dashed ? '5 4' : undefined}
-                  className={!conn.dashed && isHighlighted ? 'animate-marching-ants' : undefined}
+                  strokeDasharray={lineDash}
+                  className={isContrib ? 'animate-marching-ants' : (!conn.dashed && isHighlighted ? 'animate-marching-ants' : undefined)}
                   style={{ transition: 'stroke 0.15s, stroke-opacity 0.15s' }}
                 />
+                {/* Arrowhead on EGR-bound lines in Flow C */}
+                {isContrib && (() => {
+                  // Approximate arrow tip at target card left edge
+                  const ax = tp.x, ay = tp.y + CARD_H / 2;
+                  return (
+                    <polygon
+                      points={`${ax},${ay} ${ax - 8},${ay - 4} ${ax - 8},${ay + 4}`}
+                      fill={lineColor} fillOpacity={lineOpacity}
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  );
+                })()}
+                {/* "contributes" pill label on EGR-bound lines */}
+                {isContrib && !isHovered && (
+                  <g style={{ pointerEvents: 'none' }}>
+                    <rect x={midX - 24} y={midY - 8} width={48} height={16} rx={8}
+                      fill="#6E69BE" fillOpacity={0.12} />
+                    <text x={midX} y={midY + 4} textAnchor="middle"
+                      fontSize="8" fontWeight="700" fill="#6E69BE" fillOpacity={0.9}
+                      style={{ userSelect: 'none', fontFamily: 'monospace' }}>
+                      drives →
+                    </text>
+                  </g>
+                )}
                 {/* Origin dot */}
-                <circle cx={fp.x + CARD_W} cy={fp.y + CARD_H / 2} r={isHovered ? 5 : isHighlighted ? 4 : 3}
-                  fill={isHovered ? '#EF4444' : conn.color}
-                  fillOpacity={isHighlighted || isHovered ? 1 : 0.6}
+                <circle cx={fp.x + CARD_W} cy={fp.y + CARD_H / 2}
+                  r={isHovered ? 5 : (isContrib || isHighlighted) ? 4 : 3}
+                  fill={isHovered ? '#EF4444' : lineColor}
+                  fillOpacity={lineOpacity}
                   style={{ transition: 'fill 0.15s, r 0.15s' }} />
                 {/* Target dot */}
-                <circle cx={tp.x} cy={tp.y + CARD_H / 2} r={isHovered ? 5 : isHighlighted ? 4 : 3}
-                  fill="white" stroke={isHovered ? '#EF4444' : conn.color}
-                  strokeWidth={1.8} strokeOpacity={isHighlighted || isHovered ? 1 : 0.6}
+                <circle cx={tp.x} cy={tp.y + CARD_H / 2}
+                  r={isHovered ? 5 : (isContrib || isHighlighted) ? 4 : 3}
+                  fill="white" stroke={isHovered ? '#EF4444' : lineColor}
+                  strokeWidth={isContrib ? 2.5 : 1.8} strokeOpacity={lineOpacity}
                   style={{ transition: 'stroke 0.15s' }} />
                 {/* Hover tooltip: ✕ */}
                 {isHovered && (
                   <text
-                    x={(fp.x + CARD_W + tp.x) / 2}
-                    y={(fp.y + CARD_H / 2 + tp.y + CARD_H / 2) / 2 - 8}
+                    x={midX} y={midY - 8}
                     textAnchor="middle" fontSize="10" fontWeight="bold"
                     fill="#EF4444" style={{ pointerEvents: 'none', userSelect: 'none' }}
                   >
@@ -624,27 +797,42 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
 
           const isEdgeHovered = edgeHoverId === d.id;
 
+          const isEgrForecast = d.id === 'egr' && !!activeForecast;
+          const cardWidth = isEgrForecast ? CARD_W + 36 : CARD_W;
+
           return (
             <div
               key={d.id}
               onMouseDown={e => handleCardMouseDown(e, d.id)}
               onMouseMove={e => handleCardMouseMove(e, d.id)}
               onMouseLeave={() => setEdgeHoverId(null)}
-              className={`absolute bg-white border rounded-2xl shadow-sm overflow-hidden flex flex-col transition-all duration-150 select-none z-20 ${
+              className={`absolute border rounded-2xl overflow-hidden flex flex-col transition-all duration-150 select-none z-20 ${
                 drag?.id === d.id   ? 'cursor-grabbing shadow-xl z-30' :
                 isEdgeHovered       ? 'cursor-crosshair' : 'cursor-grab'
               } ${
-                isSource  ? 'border-peach ring-2 ring-peach/30 shadow-md' :
-                isPinned  ? 'border-amber-warm ring-2 ring-amber-warm-light' :
-                isSel     ? 'border-brand-indigo ring-2 ring-brand-indigo/20 shadow-md' :
-                isEdgeHovered ? 'border-peach/60 ring-2 ring-peach/20 shadow-md' :
-                            'border-warm-border hover:shadow-md'
+                isEgrForecast ? 'bg-gradient-to-b from-white to-brand-indigo/5 border-brand-indigo ring-2 ring-brand-indigo/25 shadow-md' :
+                isSource      ? 'bg-white border-peach ring-2 ring-peach/30 shadow-md' :
+                isPinned      ? 'bg-white border-amber-warm ring-2 ring-amber-warm-light' :
+                isSel         ? 'bg-white border-brand-indigo ring-2 ring-brand-indigo/20 shadow-md' :
+                isEdgeHovered ? 'bg-white border-peach/60 ring-2 ring-peach/20 shadow-md' :
+                                'bg-white border-warm-border hover:shadow-md shadow-sm'
               }`}
-              style={{ left: pos.x, top: pos.y, width: CARD_W }}
+              style={{ left: pos.x, top: pos.y, width: cardWidth }}
             >
-              <div className="p-3 pb-2 flex flex-col gap-1 font-sans">
+              <div className={`p-3 pb-2 flex flex-col gap-1 font-sans ${isEgrForecast ? 'bg-brand-indigo/5 border-b border-brand-indigo/15' : ''}`}>
                 <div className="flex justify-between items-center">
-                  <span className="text-[12px] font-bold text-warm-text truncate max-w-[136px]">{d.name}</span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={`text-[12px] font-bold truncate ${isEgrForecast ? 'text-brand-indigo max-w-[172px]' : 'text-warm-text max-w-[110px]'}`}>{d.name}</span>
+                    {isEgrForecast && (
+                      <span className="shrink-0 text-[8.5px] font-bold bg-brand-indigo text-white px-1.5 py-0.5 rounded-full uppercase tracking-wide">Target</span>
+                    )}
+                    {!isEgrForecast && !!activeForecast && d.id.startsWith('param-') && (
+                      <span className="shrink-0 text-[8px] font-bold bg-brand-indigo/10 text-brand-indigo px-1 py-0.5 rounded uppercase tracking-wide">Driver</span>
+                    )}
+                    {!isEgrForecast && !!activeForecast && d.id.startsWith('seg-') && (
+                      <span className="shrink-0 text-[8px] font-bold bg-amber-warm-light text-amber-warm px-1 py-0.5 rounded uppercase tracking-wide">Modifier</span>
+                    )}
+                  </div>
                   <button
                     onMouseDown={e => { e.stopPropagation(); setPinnedIds(prev => { const n = new Set(prev); n.has(d.id) ? n.delete(d.id) : n.add(d.id); return n; }); }}
                     onClick={e => e.stopPropagation()}
@@ -660,19 +848,54 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
                 }`}>{d.type}</span>
               </div>
 
-              <div className="px-3 pb-3 flex flex-col gap-0.5 border-b border-warm-border/30">
-                {getCardSamples(d).map((s, si) => (
-                  <span key={si} className="text-[11px] font-mono text-warm-muted leading-tight truncate">{s}</span>
-                ))}
-              </div>
+              {isEgrForecast ? (
+                /* ── EGR card in Flow C: structured rows ── */
+                <div className="px-3 py-2.5 flex flex-col gap-1.5 border-b border-brand-indigo/15">
+                  {getCardSamples(d).map((s, si) => {
+                    const [label, ...rest] = s.split(': ');
+                    const val = rest.join(': ');
+                    const isMainValue = si === 0; // "forecast target"
+                    const isAchieved  = label === 'achieved';
+                    return (
+                      <div key={si} className="flex items-baseline justify-between gap-2">
+                        <span className="text-[9.5px] font-semibold text-warm-muted uppercase tracking-wide shrink-0">{label}</span>
+                        <span className={`font-mono leading-tight ${
+                          isMainValue ? 'text-[13px] font-extrabold text-brand-indigo' :
+                          isAchieved  ? 'text-[11px] font-bold text-sage' :
+                                        'text-[11px] font-semibold text-warm-text'
+                        }`}>{val}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="px-3 pb-3 flex flex-col gap-0.5 border-b border-warm-border/30">
+                  {getCardSamples(d).map((s, si) => (
+                    <span key={si} className="text-[11px] font-mono text-warm-muted leading-tight truncate">{s}</span>
+                  ))}
+                </div>
+              )}
 
               <div className={`px-3 py-1.5 flex items-center gap-1.5 ${
-                isSource ? 'bg-peach/10' : isPinned ? 'bg-amber-warm-light/40' : 'bg-warm-bg/40'
+                isSource      ? 'bg-peach/10' :
+                isPinned      ? 'bg-amber-warm-light/40' :
+                isEgrForecast ? 'bg-brand-indigo/8' :
+                                'bg-warm-bg/40'
               }`}>
                 {isSource ? (
                   <><span className="h-1.5 w-1.5 rounded-full bg-peach animate-pulse shrink-0" /><span className="text-[10px] font-mono text-peach">Linking source…</span></>
                 ) : isPinned ? (
                   <><span className="h-1.5 w-1.5 rounded-full bg-amber-warm shrink-0" /><span className="text-[10px] font-mono text-amber-warm">Pinned · Q3 values</span></>
+                ) : isEgrForecast ? (
+                  <><span className="h-1.5 w-1.5 rounded-full bg-brand-indigo animate-pulse shrink-0" /><span className="text-[10px] font-semibold text-brand-indigo">Forecast-driven target</span></>
+                ) : activeForecast && d.id.startsWith('param-') && latestWorldModel ? (
+                  <><span className="h-1.5 w-1.5 rounded-full bg-brand-indigo animate-pulse shrink-0" /><span className="text-[10px] font-mono text-brand-indigo">Newton-Raphson optimised</span></>
+                ) : activeForecast && d.id.startsWith('param-') ? (
+                  <><span className="h-1.5 w-1.5 rounded-full bg-brand-indigo animate-pulse shrink-0" /><span className="text-[10px] font-mono text-brand-indigo">Primary driver</span></>
+                ) : activeForecast && d.id.startsWith('seg-') && latestWorldModel?.distribution_difference ? (
+                  <><span className="h-1.5 w-1.5 rounded-full bg-amber-warm animate-pulse shrink-0" /><span className="text-[10px] font-mono text-amber-warm">{latestWorldModel.distribution_difference.validation_verdict ?? 'Distribution checked'}</span></>
+                ) : activeForecast && d.id.startsWith('seg-') ? (
+                  <><span className="h-1.5 w-1.5 rounded-full bg-amber-warm animate-pulse shrink-0" /><span className="text-[10px] font-mono text-amber-warm">Segment modifier</span></>
                 ) : (
                   <><span className="h-1.5 w-1.5 rounded-full bg-sage animate-pulse shrink-0" /><span className="text-[10px] font-mono text-warm-muted">Vectorised ✓</span></>
                 )}
@@ -690,6 +913,107 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
           : 'Drag card body to move · hover card edge (crosshair) to link · hover line to delink'
         }
       </div>
+
+      {/* ── How we achieved this — real backend reasoning ─────────── */}
+      {latestWorldModel && optimisationResult && insightsOpen && (
+        <div className="bg-white border border-warm-border rounded-2xl shadow-card overflow-hidden animate-float-up">
+
+          {/* Header */}
+          <div className="px-4 py-2.5 border-b border-warm-border bg-gradient-to-r from-white to-brand-indigo/5 flex items-center gap-2">
+            <TrendingUp className="h-3.5 w-3.5 text-brand-indigo" />
+            <span className="text-[12px] font-bold text-warm-text">How we achieved the target</span>
+            <span className={`ml-auto text-[9.5px] font-bold px-2 py-0.5 rounded-full ${
+              latestWorldModel.status === 'converged'
+                ? 'bg-sage-light text-sage'
+                : 'bg-amber-warm-light text-amber-warm'
+            }`}>
+              {latestWorldModel.status === 'converged' ? '✓ Converged' : '⚠ Not converged'}
+            </span>
+          </div>
+
+          {/* Section 1 — Strategy & Input parameters */}
+          <div className="grid grid-cols-2 divide-x divide-warm-border/30 border-b border-warm-border/30">
+            {/* Strategy chosen */}
+            <div className="px-4 py-3 flex flex-col gap-1.5">
+              <span className="text-[9px] font-bold text-warm-muted uppercase tracking-wide">Growth Strategy</span>
+              <span className="text-[13px] font-extrabold text-brand-indigo capitalize">
+                {latestWorldModel.scenario_label || latestWorldModel.growth_strategy?.replace(/_/g, ' ') || '—'}
+              </span>
+              {latestWorldModel.ds_decision?.reasoning && (
+                <p className="text-[10.5px] text-warm-muted leading-snug">{latestWorldModel.ds_decision.reasoning}</p>
+              )}
+              {latestWorldModel.ds_decision?.data_insight && (
+                <p className="text-[10px] font-semibold text-brand-indigo/70">{latestWorldModel.ds_decision.data_insight}</p>
+              )}
+            </div>
+
+            {/* Vectorisation & engine params */}
+            <div className="px-4 py-3 flex flex-col gap-1.5">
+              <span className="text-[9px] font-bold text-warm-muted uppercase tracking-wide">Vectorisation Parameters</span>
+              <span className="text-[11px] font-bold text-warm-text">
+                {latestWorldModel.optimization_method?.replace(/_/g, '-') || '—'}
+              </span>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-0.5">
+                {([
+                  ['Learning rate',   latestWorldModel.optimization_params?.learning_rate?.toString()],
+                  ['Scale factor',    latestWorldModel.optimization_params?.scale_factor?.toString()],
+                  ['Max iterations',  latestWorldModel.optimization_params?.max_iterations?.toString()],
+                  ['Tolerance',       latestWorldModel.optimization_params?.tolerance?.toExponential?.(1)],
+                ] as [string, string | undefined][]).map(([k, v]) => v != null && (
+                  <React.Fragment key={k}>
+                    <span className="text-[9.5px] text-warm-muted">{k}</span>
+                    <span className="text-[9.5px] font-mono font-semibold text-warm-text">{v}</span>
+                  </React.Fragment>
+                ))}
+              </div>
+              {latestWorldModel.de_decision?.vector_modification && (
+                <p className="text-[10px] text-warm-muted mt-1">{latestWorldModel.de_decision.vector_modification}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Section 2 — Newton-Raphson run detail */}
+          <div className="grid grid-cols-4 divide-x divide-warm-border/30 border-b border-warm-border/30">
+            {([
+              ['Iterations', latestWorldModel.optimization_result?.iterations?.toString()],
+              ['Convergence error', latestWorldModel.optimization_result?.convergence_error != null
+                ? latestWorldModel.optimization_result.convergence_error.toExponential(3) : '—'],
+              ['Final EGR', latestWorldModel.optimization_result?.final_egr_percentage],
+              ['Target EGR', latestWorldModel.egr_target_percentage],
+            ] as [string, string | undefined][]).map(([label, val]) => (
+              <div key={label} className="px-3 py-2.5 flex flex-col gap-0.5">
+                <span className="text-[9px] font-bold text-warm-muted uppercase tracking-wide">{label}</span>
+                <span className="text-[12px] font-extrabold text-warm-text font-mono">{val ?? '—'}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Section 3 — Distribution quality */}
+          {latestWorldModel.distribution_difference && (
+            <div className="grid grid-cols-4 divide-x divide-warm-border/30 border-b border-warm-border/30">
+              {([
+                ['MARD', latestWorldModel.distribution_difference.mard_percentage],
+                ['Cosine similarity', latestWorldModel.distribution_difference.cosine_similarity?.toFixed(4)],
+                ['Top quartile Δ', latestWorldModel.distribution_difference.top_quartile_share_delta?.toFixed(4)],
+                ['Validation', latestWorldModel.distribution_difference.validation_verdict],
+              ] as [string, string | undefined][]).map(([label, val]) => (
+                <div key={label} className="px-3 py-2.5 flex flex-col gap-0.5">
+                  <span className="text-[9px] font-bold text-warm-muted uppercase tracking-wide">{label}</span>
+                  <span className="text-[11px] font-semibold text-warm-text font-mono truncate">{val ?? '—'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Section 4 — Reasoning summary */}
+          {latestWorldModel.reasoning_summary && (
+            <div className="px-4 py-3 bg-warm-bg/30">
+              <span className="text-[9px] font-bold text-warm-muted uppercase tracking-wide block mb-1">Reasoning</span>
+              <p className="text-[10.5px] text-warm-muted leading-relaxed">{latestWorldModel.reasoning_summary}</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

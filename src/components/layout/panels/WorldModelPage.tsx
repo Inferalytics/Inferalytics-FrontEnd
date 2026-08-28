@@ -1,36 +1,123 @@
-import React, { useState } from 'react';
-import { Layers, TrendingUp, GitBranch, BarChart3, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useStore } from '../../../store/useStore';
+import React, { useEffect, useState } from 'react';
+import { Layers, TrendingUp, GitBranch, BarChart3, ChevronLeft, ChevronRight, Activity, GitCompare } from 'lucide-react';
+import { useStore, getWorldModelsCache } from '../../../store/useStore';
+import type { WorldModel } from '../../../types/api';
+import { useSearchParams } from 'react-router-dom';
 import WorldModelGraph from '../../chat/WorldModelGraph';
-import WorldModelTree from '../../chat/WorldModelTree';
+import WorldModelCanvasTree from '../../chat/WorldModelCanvasTree';
 import WorldModelContributionChart from '../../chat/WorldModelContributionChart';
+import WorldModelCompareView from '../../chat/WorldModelCompareView';
 
-type ViewMode = 'graph' | 'tree';
+type ViewMode = 'graph' | 'tree' | 'compare';
 
 export default function WorldModelPage() {
-  const { worldModels } = useStore();
+  const { worldModels, latestForecast, activeBatchId, addWorldModel } = useStore();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedIdx, setSelectedIdx] = useState<number>(0);
-  const [viewMode, setViewMode] = useState<ViewMode>('graph');
 
-  const reversed   = [...worldModels].reverse();
+  // Derive viewMode from URL (?view=compare) so navigation drives it
+  const urlView = searchParams.get('view');
+  const [localViewMode, setLocalViewMode] = useState<ViewMode>(urlView === 'compare' ? 'compare' : 'tree');
+  const viewMode = urlView === 'compare' ? 'compare' : localViewMode;
+
+  const setViewMode = (v: ViewMode) => {
+    setLocalViewMode(v);
+    if (v === 'compare') {
+      setSearchParams(prev => { const p = new URLSearchParams(prev); p.set('view', 'compare'); return p; });
+    } else {
+      setSearchParams(prev => { const p = new URLSearchParams(prev); p.delete('view'); return p; });
+    }
+  };
+
+  // On mount: if Zustand's worldModels is empty, restore from:
+  //   1. module-level cache (survives route changes in same session)
+  //   2. sessionStorage (survives page refresh — stored without tree)
+  useEffect(() => {
+    if (worldModels.length === 0) {
+      // Try module-level cache first (has full tree)
+      const cached = getWorldModelsCache();
+      if (cached.length > 0) {
+        cached.forEach(wm => addWorldModel(wm));
+        return;
+      }
+      // Fall back to sessionStorage (compact, no tree)
+      if (activeBatchId) {
+        try {
+          const raw = sessionStorage.getItem(`wm_batch_${activeBatchId}`);
+          if (raw) {
+            const stored: WorldModel[] = JSON.parse(raw);
+            stored.forEach(wm => addWorldModel(wm));
+          }
+        } catch { /* ignore parse errors */ }
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBatchId]);
+
+  // Only show scenarios and forecast belonging to the active batch
+  const batchModels = activeBatchId
+    ? worldModels.filter(wm => wm.batch_id === activeBatchId)
+    : worldModels;
+
+  const batchForecast = (activeBatchId && latestForecast?.batch_id === activeBatchId)
+    ? latestForecast : null;
+
+  // Sort newest-first for display
+  const reversed   = [...batchModels].sort((a, b) => b.scenario_number - a.scenario_number);
   const totalCount = reversed.length;
 
   if (totalCount === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center">
-        <div className="h-14 w-14 rounded-2xl bg-brand-indigo/10 flex items-center justify-center">
-          <Layers className="h-7 w-7 text-brand-indigo/40" />
-        </div>
-        <div>
-          <h2 className="text-[18px] font-bold text-warm-text mb-1">No World Models Yet</h2>
-          <p className="text-[13px] text-warm-muted max-w-sm leading-relaxed">
-            Run an optimisation or forecast in the IPS Engine. The AI will build a semantic
-            tree showing exactly which data points drove the EGR growth.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-indigo/5 border border-brand-indigo/15 text-[12px] text-brand-indigo font-medium">
-          <TrendingUp className="h-4 w-4" />
-          Go to IPS Engine → Run Optimisation
+      <div className="flex flex-col gap-5 max-w-5xl mx-auto w-full">
+        {batchForecast && (
+          <div className="bg-white rounded-2xl border border-warm-border shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-warm-border/60 bg-gradient-to-r from-white to-warm-bg/30 flex items-center gap-2">
+              <Activity className="h-4 w-4 text-brand-indigo" />
+              <span className="text-[13px] font-bold text-warm-text">Forecast Result</span>
+              <span className="ml-auto text-[10px] font-mono bg-lavender/30 text-brand-indigo px-2 py-0.5 rounded-full">
+                Holt-Winters · α={batchForecast.holt_winters_parameters?.alpha} β={batchForecast.holt_winters_parameters?.beta}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-warm-border/50">
+              <div className="px-4 py-3 flex flex-col gap-0.5">
+                <span className="text-[10px] font-semibold text-warm-muted uppercase tracking-wide">Data Range</span>
+                <span className="text-[12px] font-mono font-bold text-warm-text">{batchForecast.data_range?.start_time} → {batchForecast.data_range?.end_time}</span>
+              </div>
+              <div className="px-4 py-3 flex flex-col gap-0.5">
+                <span className="text-[10px] font-semibold text-warm-muted uppercase tracking-wide">Target Period</span>
+                <span className="text-[12px] font-mono font-bold text-brand-indigo">{batchForecast.target_time}</span>
+              </div>
+              <div className="px-4 py-3 flex flex-col gap-0.5">
+                <span className="text-[10px] font-semibold text-warm-muted uppercase tracking-wide">Last Known Value</span>
+                <span className="text-[12px] font-mono font-bold text-warm-text">{batchForecast.last_known_value?.toLocaleString()}</span>
+              </div>
+              <div className="px-4 py-3 flex flex-col gap-0.5">
+                <span className="text-[10px] font-semibold text-warm-muted uppercase tracking-wide">Forecasted Value</span>
+                <span className="text-[12px] font-mono font-bold text-brand-indigo">{batchForecast.forecasted_value?.toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="px-4 py-2.5 bg-sage-light/30 border-t border-sage-border/30 flex items-center gap-3">
+              <span className="text-[11px] font-semibold text-warm-muted">Predicted Growth Rate:</span>
+              <span className="text-[13px] font-bold text-sage">{batchForecast.predicted_growth_rate_percentage}</span>
+              <span className="text-[10px] text-warm-muted ml-auto">Holt-Winters exponential smoothing — detects trend + seasonality</span>
+            </div>
+          </div>
+        )}
+        <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4 text-center">
+          <div className="h-14 w-14 rounded-2xl bg-brand-indigo/10 flex items-center justify-center">
+            <Layers className="h-7 w-7 text-brand-indigo/40" />
+          </div>
+          <div>
+            <h2 className="text-[18px] font-bold text-warm-text mb-1">No World Models Yet</h2>
+            <p className="text-[13px] text-warm-muted max-w-sm leading-relaxed">
+              Run an optimisation in the IPS Engine. The AI will build a semantic
+              tree showing exactly which data points drove the EGR growth.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-indigo/5 border border-brand-indigo/15 text-[12px] text-brand-indigo font-medium">
+            <TrendingUp className="h-4 w-4" />
+            Go to IPS Engine → Run Optimisation
+          </div>
         </div>
       </div>
     );
@@ -40,7 +127,7 @@ export default function WorldModelPage() {
   const tree    = current.world_model_tree ?? null;
 
   return (
-    <div className="flex flex-col gap-5 max-w-4xl mx-auto w-full">
+    <div className="flex flex-col gap-5 max-w-5xl mx-auto w-full">
 
       {/* ── Page header ─────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -62,9 +149,7 @@ export default function WorldModelPage() {
             <button
               onClick={() => setViewMode('graph')}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                viewMode === 'graph'
-                  ? 'bg-white text-brand-indigo shadow-sm'
-                  : 'text-warm-muted hover:text-warm-text'
+                viewMode === 'graph' ? 'bg-white text-brand-indigo shadow-sm' : 'text-warm-muted hover:text-warm-text'
               }`}
             >
               <BarChart3 className="h-3.5 w-3.5" />
@@ -73,14 +158,23 @@ export default function WorldModelPage() {
             <button
               onClick={() => setViewMode('tree')}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                viewMode === 'tree'
-                  ? 'bg-white text-brand-indigo shadow-sm'
-                  : 'text-warm-muted hover:text-warm-text'
+                viewMode === 'tree' ? 'bg-white text-brand-indigo shadow-sm' : 'text-warm-muted hover:text-warm-text'
               }`}
             >
               <GitBranch className="h-3.5 w-3.5" />
               Tree
             </button>
+            {totalCount > 1 && (
+              <button
+                onClick={() => setViewMode('compare')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                  viewMode === 'compare' ? 'bg-brand-indigo text-white shadow-sm' : 'text-warm-muted hover:text-warm-text'
+                }`}
+              >
+                <GitCompare className="h-3.5 w-3.5" />
+                Compare
+              </button>
+            )}
           </div>
 
           {/* Scenario pagination */}
@@ -126,14 +220,54 @@ export default function WorldModelPage() {
         </div>
       )}
 
-      {/* ── Content ─────────────────────────────────────────────── */}
+      {/* ── Forecast Result Card ─────────────────────────────────── */}
+      {batchForecast && (
+        <div className="bg-white rounded-2xl border border-warm-border shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-warm-border/60 bg-gradient-to-r from-white to-warm-bg/30 flex items-center gap-2">
+            <Activity className="h-4 w-4 text-brand-indigo" />
+            <span className="text-[13px] font-bold text-warm-text">Forecast Result</span>
+            <span className="ml-auto text-[10px] font-mono bg-lavender/30 text-brand-indigo px-2 py-0.5 rounded-full">
+              Holt-Winters · α={batchForecast.holt_winters_parameters?.alpha} β={batchForecast.holt_winters_parameters?.beta}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-warm-border/50">
+            <div className="px-4 py-3 flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-warm-muted uppercase tracking-wide">Data Range</span>
+              <span className="text-[12px] font-mono font-bold text-warm-text">
+                {batchForecast.data_range?.start_time} → {batchForecast.data_range?.end_time}
+              </span>
+            </div>
+            <div className="px-4 py-3 flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-warm-muted uppercase tracking-wide">Target Period</span>
+              <span className="text-[12px] font-mono font-bold text-brand-indigo">{batchForecast.target_time}</span>
+            </div>
+            <div className="px-4 py-3 flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-warm-muted uppercase tracking-wide">Last Known Value</span>
+              <span className="text-[12px] font-mono font-bold text-warm-text">{batchForecast.last_known_value?.toLocaleString()}</span>
+            </div>
+            <div className="px-4 py-3 flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-warm-muted uppercase tracking-wide">Forecasted Value</span>
+              <span className="text-[12px] font-mono font-bold text-brand-indigo">{batchForecast.forecasted_value?.toLocaleString()}</span>
+            </div>
+          </div>
+          <div className="px-4 py-2.5 bg-sage-light/30 border-t border-sage-border/30 flex items-center gap-3">
+            <span className="text-[11px] font-semibold text-warm-muted">Predicted Growth Rate:</span>
+            <span className="text-[13px] font-bold text-sage">{batchForecast.predicted_growth_rate_percentage}</span>
+            <span className="text-[10px] text-warm-muted ml-auto">Holt-Winters exponential smoothing — detects trend + seasonality</span>
+          </div>
+        </div>
+      )}
 
-      {/* Graph view — contribution drill-down chart */}
-      {viewMode === 'graph' && tree && (
+      {/* ── Compare view ─────────────────────────────────────────── */}
+      {viewMode === 'compare' && (
+        <WorldModelCompareView worldModels={reversed} />
+      )}
+
+      {/* ── Graph view ───────────────────────────────────────────── */}
+      {viewMode !== 'compare' && viewMode === 'graph' && tree && (
         <WorldModelContributionChart tree={tree} />
       )}
-      {viewMode === 'graph' && !tree && (
-        /* No world_model_tree — fall back to dimension card graph */
+      {viewMode !== 'compare' && viewMode === 'graph' && !tree && (
         <div className="flex flex-col gap-4">
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-[12px] text-amber-700 leading-relaxed">
             <strong>Contribution graph not available</strong> for this scenario — the backend did not return
@@ -146,11 +280,11 @@ export default function WorldModelPage() {
         </div>
       )}
 
-      {/* Tree view — semantic hierarchy */}
-      {viewMode === 'tree' && tree && (
-        <WorldModelTree tree={tree} />
+      {/* ── Tree view ─────────────────────────────────────────────── */}
+      {viewMode !== 'compare' && viewMode === 'tree' && tree && (
+        <WorldModelCanvasTree tree={tree} />
       )}
-      {viewMode === 'tree' && !tree && (
+      {viewMode !== 'compare' && viewMode === 'tree' && !tree && (
         <div className="flex flex-col gap-4">
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-[12px] text-amber-700 leading-relaxed">
             <strong>Tree view not available</strong> for this scenario — the backend did not return a

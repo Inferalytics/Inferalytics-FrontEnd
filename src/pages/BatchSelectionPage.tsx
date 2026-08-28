@@ -74,7 +74,7 @@ export default function BatchSelectionPage() {
   const handleSelectBatch = async (batchId: string) => {
     setSelecting(batchId);
     try {
-      await switchBatchApi(batchId);
+      await switchBatchApi!(batchId);
       navigate('/dashboard/conversation');
     } catch {
       setError('Failed to switch workspace. Please try again.');
@@ -89,7 +89,7 @@ export default function BatchSelectionPage() {
     setCreating(true);
     setCreateError('');
     try {
-      await createBatchApi(name);
+      await createBatchApi!(name);
       navigate('/dashboard/conversation');
     } catch {
       setCreateError('Failed to create workspace. Please try again.');

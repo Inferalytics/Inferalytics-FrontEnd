@@ -1,6 +1,31 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { GlobalState, Batch, Message, Relationship, DimensionCard, Scenario, ModelType, WorldModel } from '../types';
+import type { ForecastScenariosResponse } from '../types/api';
 import api from '../api';
+import { buildFullScenarioPrompt, nextStrategy, shouldRefreshForecast } from '../lib/agentNavigation';
+
+/**
+ * Module-level forecast page cache — never persisted, never hits localStorage.
+ * Set by the pipeline after computation completes so ForecastPage renders
+ * immediately without an extra network round-trip.
+ */
+let _forecastPageCache: ForecastScenariosResponse | null = null;
+export const getForecastPageCache = () => _forecastPageCache;
+export const setForecastPageCache = (data: ForecastScenariosResponse | null) => {
+  _forecastPageCache = data;
+};
+
+/**
+ * Module-level world models cache — never persisted, never hits localStorage.
+ * Survives route changes within the same tab session (but not full page refresh).
+ * Stores all batches; filter by batch_id when reading.
+ */
+let _worldModelsCache: WorldModel[] = [];
+export const getWorldModelsCache = () => _worldModelsCache;
+export const addToWorldModelsCache = (wm: WorldModel) => {
+  _worldModelsCache = [..._worldModelsCache.filter(w => w.scenario_id !== wm.scenario_id), wm];
+};
 
 const INITIAL_PROVENANCE_CONVERSATIONS: Record<string, Message[]> = {};
 
@@ -31,14 +56,16 @@ const INITIAL_SCENARIOS: Scenario[] = [];
 
 const INITIAL_WORKSPACE_METRICS: { name: string; value: string; delta: string; dir: 'up' | 'down' | 'flat' }[] = [];
 
-export const useStore = create<GlobalState>((set, get) => ({
+export const useStore = create<GlobalState>()(persist((set, get) => ({
   screen: 1,
   batches: INITIAL_BATCHES,
   activeBatchId: '',
   model: 'auto',
   conversation: INITIAL_CONVERSATION,
+  perBatchConversations: {} as Record<string, Message[]>,
   leftSidebarOpen: true,
   rightSidebarOpen: false,
+  pipelineStage: null as ('forecast' | 'ips' | null),
   setup: {
     focalPoint: '',
     timeGranularity: 'Quarter',
@@ -53,6 +80,20 @@ export const useStore = create<GlobalState>((set, get) => ({
   egrTarget: 12,
   scenarios: INITIAL_SCENARIOS,
   optimisationResult: null,
+  dataBatchId: null as string | null,
+  latestForecast: null,
+  setLatestForecast: (data) => set({ latestForecast: data }),
+  forecastScenarios: [],
+  addForecastScenario: (s) => {
+    const existing = get().forecastScenarios;
+    // Dedupe by scenario_number; newer entry wins
+    const deduped = existing.filter(e => e.scenario_number !== s.scenario_number);
+    set({ forecastScenarios: [...deduped, s].sort((a, b) => a.scenario_number - b.scenario_number) });
+  },
+  setForecastScenarios: (scenarios) => {
+    set({ forecastScenarios: [...scenarios].sort((a, b) => a.scenario_number - b.scenario_number) });
+  },
+  clearForecastScenarios: () => set({ forecastScenarios: [] }),
   worldModels: [],
   selectedProvenanceMetric: null,
   provenanceConversations: INITIAL_PROVENANCE_CONVERSATIONS,
@@ -67,15 +108,42 @@ export const useStore = create<GlobalState>((set, get) => ({
   },
 
   setActiveBatch: (id: string) => {
+    const state = get();
+    const isSameBatch = state.activeBatchId === id;
+
+    // Save current conversation under the current batch id before switching
+    const savedConvos = { ...state.perBatchConversations };
+    if (!isSameBatch && state.activeBatchId) {
+      savedConvos[state.activeBatchId] = state.conversation.filter(m => !m.isTyping).slice(-30);
+    }
+
+    // Restore conversation for the target batch (or start fresh)
+    const restoredConv = (!isSameBatch && savedConvos[id])
+      ? savedConvos[id]
+      : (isSameBatch ? state.conversation : INITIAL_CONVERSATION);
+
     set({
       activeBatchId: id,
-      batches: get().batches.map((b) => ({
+      perBatchConversations: savedConvos,
+      batches: state.batches.map((b) => ({
         ...b,
         status: b.id === id ? 'active' : b.status === 'active' ? 'idle' : b.status
       })),
-      // Clear batch-specific data so previous batch results don't bleed through
-      worldModels: [],
-      scenarios: [],
+      // Only clear batch-specific data when actually switching to a different batch
+      ...(isSameBatch ? {} : {
+        worldModels: [],
+        scenarios: [],
+        latestForecast: null,
+        forecastScenarios: [],
+        optimisationResult: null,
+        dataBatchId: null,
+        growthRates: INITIAL_GROWTH_RATES,
+        dimensions: INITIAL_DIMENSIONS(4),
+        relationships: INITIAL_RELATIONSHIPS,
+        setup: { focalPoint: '', timeGranularity: 'quarterly', timeRange: '', segments: [], parameters: [], sources: [] },
+        conversation: restoredConv,
+        provenanceConversations: {},
+      }),
     });
     if (get().syncBackendState) {
       void get().syncBackendState!();
@@ -87,7 +155,13 @@ export const useStore = create<GlobalState>((set, get) => ({
   },
 
   addMessage: (msg: Message) => {
-    set({ conversation: [...get().conversation, { ...msg, content: msg.content || '' }] });
+    const newMsg = { ...msg, content: msg.content || '' };
+    const updated = [...get().conversation, newMsg];
+    const batchId = get().activeBatchId;
+    const updatedConvos = batchId
+      ? { ...get().perBatchConversations, [batchId]: updated.filter(m => !m.isTyping).slice(-30) }
+      : get().perBatchConversations;
+    set({ conversation: updated, perBatchConversations: updatedConvos });
   },
 
   toggleSegment: (segment: string) => {
@@ -222,6 +296,12 @@ export const useStore = create<GlobalState>((set, get) => ({
 
   syncBackendState: async () => {
     try {
+      // Note: We intentionally do NOT call api.getForecast() here.
+      // The forecast endpoint is not batch-aware and would return stale data
+      // from a previous batch, causing cross-batch contamination on the
+      // Forecast page. Forecast state is only set when the agent actually
+      // runs a forecast in the current session (via RightPanel / TalkPanel).
+
       // 1. Sync EGR Target
       try {
         const egrRes = await api.getEgr().catch(() => null);
@@ -234,7 +314,17 @@ export const useStore = create<GlobalState>((set, get) => ({
       // 2. Sync Populated Data & Extract Real Blueprint Metadata
       try {
         const dataRes = await api.retrieveData().catch(() => null);
-        if (dataRes?.data?.records?.length > 0) {
+        if (!dataRes?.data?.records || dataRes.data.records.length === 0) {
+          // No data for this batch — reset to clean state
+          set({
+            growthRates: INITIAL_GROWTH_RATES,
+            dimensions: INITIAL_DIMENSIONS(4),
+            relationships: INITIAL_RELATIONSHIPS,
+            setup: { ...get().setup, sources: [], parameters: [], segments: [] },
+            dataBatchId: null,
+          });
+        }
+        if (dataRes?.data?.records && dataRes.data.records.length > 0) {
           const records = dataRes.data.records;
           const sources = records.map(r => ({
             name: r.file_name,
@@ -263,14 +353,24 @@ export const useStore = create<GlobalState>((set, get) => ({
             keys.forEach(key => {
               const lowerKey = key.toLowerCase();
               if (lowerKey === 'period' || lowerKey === 'quarter' || lowerKey === 'year' || lowerKey === 'date' || lowerKey === 'time') {
-                // Collect unique periods
-                realPeriods = Array.from(new Set(content.map((row: any) => String(row[key])))).filter(Boolean);
+                // Collect unique periods, sorted chronologically
+                realPeriods = Array.from(new Set(content.map((row: any) => String(row[key])))).filter(Boolean).sort();
               } else if (typeof firstItem[key] === 'number') {
                 realParameters.push(key);
               } else {
                 realSegments.push(key);
               }
             });
+
+            // Auto-configure the data-time endpoint so the forecast pipeline
+            // always knows the historical range without manual Blueprint setup.
+            if (realPeriods.length >= 2) {
+              api.setDataTime(
+                realPeriods[0],
+                realPeriods[realPeriods.length - 1],
+                'quarterly',
+              ).catch(() => {/* non-fatal */});
+            }
 
             const focalPointName = realParameters.length > 0
               ? `${realParameters[0]} Optimization (${realPeriods[0] || 'Q1'} → ${realPeriods[realPeriods.length - 1] || 'Q4'})`
@@ -319,6 +419,7 @@ export const useStore = create<GlobalState>((set, get) => ({
             set({
               setup: updatedSetup,
               growthRates: realGrowthRates.length > 0 ? realGrowthRates : get().growthRates,
+              dataBatchId: get().activeBatchId,
             });
           } else {
             set({ setup: updatedSetup });
@@ -339,10 +440,24 @@ export const useStore = create<GlobalState>((set, get) => ({
   },
 
   addWorldModel: (wm: WorldModel) => {
-    // Dedupe by scenario_id
+    // Tag with active batch if missing, then dedupe by scenario_id
+    const tagged = wm.batch_id ? wm : { ...wm, batch_id: get().activeBatchId || '' };
     const existing = get().worldModels;
-    const filtered = existing.filter(w => w.scenario_id !== wm.scenario_id);
-    set({ worldModels: [...filtered, wm] });
+    const filtered = existing.filter(w => w.scenario_id !== tagged.scenario_id);
+    const updated = [...filtered, tagged];
+    // Keep module-level cache in sync so data survives route changes
+    addToWorldModelsCache(tagged);
+    // Persist to sessionStorage (survives page refresh within same tab session)
+    // Strip world_model_tree to stay within sessionStorage quota limits
+    try {
+      const batchId = tagged.batch_id;
+      const storageKey = `wm_batch_${batchId}`;
+      const compact = updated
+        .filter(w => w.batch_id === batchId)
+        .map(({ world_model_tree: _tree, ...rest }) => rest);
+      sessionStorage.setItem(storageKey, JSON.stringify(compact));
+    } catch { /* ignore quota errors — module cache still works */ }
+    set({ worldModels: updated });
 
     // Convert WorldModel → Scenario for ResultsPanel/ComparePanel
     const opt = wm.optimization_result;
@@ -462,6 +577,109 @@ export const useStore = create<GlobalState>((set, get) => ({
     }
   },
 
+  runFullScenario: async (opts) => {
+    const state = get();
+    const batchId = state.activeBatchId || '';
+    const batchQuery = opts.batchQuery ?? (batchId ? `?batch=${batchId}` : '');
+    const batchSep   = batchQuery ? '&' : '?';
+    const existingForecast = (state.latestForecast?.batch_id === batchId) ? state.latestForecast : null;
+    const batchWorldModels = state.worldModels.filter(wm => wm.batch_id === batchId);
+    const lastWM = batchWorldModels[batchWorldModels.length - 1];
+
+    const prompt = buildFullScenarioPrompt({
+      hasForecast: !!existingForecast,
+      forecastValue: existingForecast?.forecasted_value,
+      forecastPeriod: existingForecast?.target_time,
+      lastStrategy: lastWM?.growth_strategy,
+      egrTarget: state.egrTarget,
+    });
+
+    get().addMessage({ role: 'user', content: prompt });
+
+    // Minimum time each page stays visible (ms)
+    const FORECAST_HOLD  = 3500;
+    const IPS_HOLD       = 3000;
+    const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+    // ── Show forecast "computing" screen and fire API simultaneously ─────────
+    opts.triggerToast?.('Running full scenario pipeline…');
+    get().setPipelineStage('forecast');
+    opts.navigate(`/dashboard/forecast${batchQuery}`);
+
+    const apiPromise = api.agentChat({ message: prompt, batch_id: batchId });
+
+    try {
+      // Wait for API and a minimum computing display time
+      const [res] = await Promise.all([apiPromise, delay(FORECAST_HOLD)]);
+
+      // Store all results
+      if (res.world_model) {
+        get().addWorldModel(res.world_model as WorldModel);
+      }
+
+      if (get().syncBackendState) {
+        await get().syncBackendState!();
+      }
+
+      // Fetch forecast data and cache it so ForecastPage renders instantly
+      try {
+        const saved = await api.getForecastScenarios();
+        if (saved?.has_results && Array.isArray(saved.scenarios) && saved.scenarios.length > 0) {
+          get().setForecastScenarios(saved.scenarios as any);
+          setForecastPageCache(saved as any);
+          const lf = (saved as any).latest_forecast;
+          if (lf) {
+            get().setLatestForecast({
+              batch_id: batchId,
+              data_range: { start_time: '', end_time: '' },
+              target_time: lf.target_period ?? '',
+              forecasted_value: lf.forecasted_value ?? 0,
+              last_known_value: 0,
+              predicted_growth_rate: 0,
+              predicted_growth_rate_percentage: lf.predicted_growth_rate_percentage ?? '',
+              holt_winters_parameters: { alpha: 0, beta: 0, gamma: 0 },
+              components: { level: 0, trend: 0, seasonal: [] },
+              periods_ahead: 1,
+            });
+          }
+        }
+      } catch {
+        // ignore forecast refresh errors
+      }
+
+      const aiReply = (res as any).reply || '';
+      get().addMessage({ role: 'ai', content: aiReply });
+
+      // ── Step 1: Show actual Forecast Results (data already cached, renders instantly) ──
+      opts.triggerToast?.('Step 1 / 3 — Forecast complete ✓');
+      get().setPipelineStage(null);
+      await delay(IPS_HOLD);
+
+      // ── Step 2: Show IPS Engine Results (2.5 s) ─────────────────────────────
+      opts.triggerToast?.('Step 2 / 3 — IPS Optimisation complete ✓');
+      opts.navigate(`/dashboard/ips-engine${batchQuery}`);
+      await delay(IPS_HOLD);
+
+      // ── Step 3: World Model page ─────────────────────────────────────────────
+      opts.triggerToast?.('Step 3 / 3 — World Model ready!');
+      opts.navigate(`/dashboard/world-model${batchQuery}`);
+
+      // ── If more than one scenario exists, slide to Compare view ─────────────
+      const totalScenarios = get().worldModels.filter(wm => wm.batch_id === batchId).length;
+      if (totalScenarios > 1) {
+        setTimeout(() => {
+          opts.triggerToast?.('Showing scenario comparison…');
+          opts.navigate(`/dashboard/world-model${batchQuery}${batchSep}view=compare`);
+        }, 2500);
+      }
+    } catch (err: any) {
+      get().setPipelineStage(null);
+      const detail = err?.response?.data?.detail || err?.message || 'Full scenario failed';
+      get().addMessage({ role: 'ai', content: `Error: ${detail}` });
+      opts.triggerToast?.(`Error: ${detail}`);
+    }
+  },
+
   resetAll: () => {
     set({
       screen: 1,
@@ -479,6 +697,7 @@ export const useStore = create<GlobalState>((set, get) => ({
 
   setLeftSidebarOpen: (open: boolean) => set({ leftSidebarOpen: open }),
   setRightSidebarOpen: (open: boolean) => set({ rightSidebarOpen: open }),
+  setPipelineStage: (stage: 'forecast' | 'ips' | null) => set({ pipelineStage: stage }),
 
   updateWorkspaceMetric: (name: string, value: string) => {
     const currentMetrics = [...get().workspaceMetrics];
@@ -643,4 +862,43 @@ export const useStore = create<GlobalState>((set, get) => ({
       });
     }
   }
-}));
+}),
+{
+  name: 'inferalytics-store',
+  // Only persist lightweight UI/preference state.
+  // worldModels and forecastScenarios are excluded — they contain large tree
+  // structures that blow the localStorage quota. They are re-fetched from the
+  // backend (syncBackendState / getForecastScenarios) on load.
+  partialize: (state) => ({
+    activeBatchId:   state.activeBatchId,
+    model:           state.model,
+    leftSidebarOpen: state.leftSidebarOpen,
+    rightSidebarOpen: state.rightSidebarOpen,
+    egrTarget:       state.egrTarget,
+    latestForecast:  state.latestForecast,
+    // Active conversation (last 30 non-typing messages)
+    conversation: state.conversation.filter(m => !m.isTyping).slice(-30),
+    // Per-batch conversation history (last 30 msgs each batch)
+    perBatchConversations: Object.fromEntries(
+      Object.entries(state.perBatchConversations).map(([bId, msgs]) => [
+        bId,
+        msgs.filter(m => !m.isTyping).slice(-30),
+      ])
+    ),
+  }),
+  storage: {
+    getItem: (name) => {
+      try { return localStorage.getItem(name); } catch { return null; }
+    },
+    setItem: (name, value) => {
+      try { localStorage.setItem(name, value); } catch (e) {
+        // Quota exceeded — clear old data and retry once
+        try { localStorage.removeItem(name); localStorage.setItem(name, value); } catch { /* give up */ }
+      }
+    },
+    removeItem: (name) => {
+      try { localStorage.removeItem(name); } catch { /* ignore */ }
+    },
+  },
+}
+));

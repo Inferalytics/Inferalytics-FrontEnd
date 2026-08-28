@@ -5,7 +5,8 @@ import { useStore } from '../../../store/useStore';
 import { useNavigate } from 'react-router-dom';
 import api from '../../../api';
 import type { ConversationTurn } from '../../../types/api';
-import { getRouteForTools } from '../../../lib/agentNavigation';
+import { getRouteForTools, detectFlow, shouldRefreshForecast, isFullScenarioRequest, hasExplicitPipelineParams, buildFullScenarioPrompt } from '../../../lib/agentNavigation';
+import { setForecastPageCache } from '../../../store/useStore';
 
 const renderFormattedText = (content: string) => {
   if (!content) return null;
@@ -73,7 +74,7 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
   const displayName = user?.fullName || user?.firstName || user?.primaryEmailAddress?.emailAddress || 'User';
   const firstName = user?.firstName || displayName.split(' ')[0] || 'there';
 
-  const { setScreen, syncBackendState, createBatchApi, batches, activeBatchId, switchBatchApi, setActiveBatch, addWorldModel, addMessage, conversation } = useStore();
+  const { setScreen, syncBackendState, createBatchApi, batches, activeBatchId, switchBatchApi, setActiveBatch, addWorldModel, addMessage, conversation, setLatestForecast, addForecastScenario, setForecastScenarios, latestForecast, worldModels, egrTarget, setPipelineStage } = useStore();
   const navigate = useNavigate();
 
   const [isBatchDropdownOpen, setIsBatchDropdownOpen] = useState(false);
@@ -188,7 +189,14 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
       if (syncBackendState) {
         void syncBackendState();
       }
-      void sendMessage(`I uploaded ${res.data.file_name}. Run the pipeline and optimize for 12% growth.`);
+      addMessage({
+        role: 'ai',
+        content: `**${res.data.file_name}** uploaded successfully — ${res.data.row_count} rows × ${res.data.column_count} columns.\n\nWhat would you like to do? You can run a full scenario, set a growth target, or ask me to analyse the data.`,
+      });
+      setTalkMessages(prev => [...prev, {
+        sender: 'ai',
+        text: `**${res.data.file_name}** uploaded successfully — ${res.data.row_count} rows × ${res.data.column_count} columns.\n\nWhat would you like to do? You can run a full scenario, set a growth target, or ask me to analyse the data.`,
+      }]);
     } catch (err: any) {
       const detail = err?.response?.data?.detail || err?.message || 'File upload failed';
       triggerToast(`Upload error: ${detail}`);
@@ -201,6 +209,94 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
   const sendMessage = async (userMsg: string) => {
     setTalkMessages(prev => [...prev, { sender: 'user', text: userMsg }]);
     setChatLoading(true);
+
+    // ── Full scenario: always step through Forecast → IPS Engine → World Model ──
+    if (isFullScenarioRequest(userMsg)) {
+      const batchId = await ensureChatBatch();
+      const batchQuery = batchId ? `?batch=${batchId}` : '';
+      const batchSep  = batchQuery ? '&' : '?';
+      const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+      // Persist user message to store (already shown in talkMessages above)
+      addMessage({ role: 'user', content: userMsg });
+
+      // Snapshot existing scenarios for this batch before the API call
+      const batchModelsBefore = worldModels.filter(wm => wm.batch_id === batchId);
+      const batchForecast = (latestForecast?.batch_id === batchId) ? latestForecast : null;
+      const lastWM = batchModelsBefore[batchModelsBefore.length - 1];
+
+      // If the user specified explicit params (period/rate) → forward their raw message.
+      // Otherwise (e.g. "run another scenario") → reuse existing forecast + rotate strategy.
+      const agentPrompt = hasExplicitPipelineParams(userMsg)
+        ? userMsg
+        : buildFullScenarioPrompt({
+            hasForecast: !!batchForecast,
+            forecastValue: batchForecast?.forecasted_value,
+            forecastPeriod: batchForecast?.target_time,
+            lastStrategy: lastWM?.growth_strategy,
+            egrTarget,
+          });
+
+      try {
+        // Navigate to forecast page (shows computing animation while API runs)
+        triggerToast('Running full scenario pipeline…');
+        setPipelineStage('forecast');
+        navigate(`/dashboard/forecast${batchQuery}`);
+
+        // Fire API — enforce at least 3 s on the computing screen
+        const apiCall = api.agentChat({ message: agentPrompt, batch_id: batchId, conversation_history: historyRef.current });
+        const [res] = await Promise.all([apiCall, wait(3000)]);
+
+        // Store results
+        if (res.world_model) addWorldModel(res.world_model);
+        const replyText = res.reply || '';
+        // Store original user message in history (not the built prompt) for clean conversation context
+        historyRef.current = [...historyRef.current, { role: 'user', content: userMsg }, { role: 'assistant', content: replyText }];
+        addMessage({ role: 'ai', content: replyText });
+        if (replyText) setTalkMessages(prev => [...prev, { sender: 'ai', text: replyText }]);
+
+        if (syncBackendState) await syncBackendState();
+
+        // Cache forecast data so ForecastPage renders instantly when stage clears
+        try {
+          const saved = await api.getForecastScenarios();
+          if (saved?.has_results && saved.scenarios?.length > 0) {
+            setForecastScenarios(saved.scenarios as any);
+            setForecastPageCache(saved as any);
+          }
+        } catch {}
+
+        // Step 1 — Show Forecast Results (stage clears → page shows real data)
+        triggerToast('Step 1 / 3 — Forecast complete ✓');
+        setPipelineStage(null);
+        await wait(2500);
+
+        // Step 2 — IPS Engine (2.5 s)
+        triggerToast('Step 2 / 3 — IPS Optimisation complete ✓');
+        navigate(`/dashboard/ips-engine${batchQuery}`);
+        await wait(2500);
+
+        // Step 3 — World Model
+        triggerToast('Step 3 / 3 — World Model ready!');
+        navigate(`/dashboard/world-model${batchQuery}`);
+
+        // Step 4 — Compare (if this batch now has >1 scenario)
+        const totalAfter = batchModelsBefore.length + (res.world_model ? 1 : 0);
+        if (totalAfter > 1) {
+          await wait(2500);
+          triggerToast('Comparing scenarios…');
+          navigate(`/dashboard/world-model${batchQuery}${batchSep}view=compare`);
+        }
+      } catch (err: any) {
+        setPipelineStage(null);
+        const detail = err?.response?.data?.detail || err?.message || 'Full scenario failed';
+        setTalkMessages(prev => [...prev, { sender: 'ai', text: `Error: ${detail}` }]);
+        triggerToast(`Error: ${detail}`);
+      } finally {
+        setChatLoading(false);
+      }
+      return;
+    }
 
     try {
       const batchId = await ensureChatBatch();
@@ -246,12 +342,49 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
         await syncBackendState();
       }
 
-      // Navigate to the relevant dashboard panel based on which tools were used
-      const batchQuery = chatBatchId ? `?batch=${chatBatchId}` : '';
-      const targetRoute = getRouteForTools(toolsUsed) ?? '/dashboard/blueprint/general';
-      setTimeout(() => {
-        navigate(`${targetRoute}${batchQuery}`);
-      }, 1500);
+      // Flow detection — determines routing and what to refresh
+      const flow = detectFlow(toolsUsed);
+
+      // Forecast refresh (Flow A always; Flow C only if forecast wasn't skipped)
+      if (shouldRefreshForecast(toolsUsed, res.forecast?.forecast_skipped)) {
+        try {
+          const saved = await api.getForecastScenarios();
+          if (saved.has_results && saved.scenarios.length > 0) {
+            setForecastScenarios(saved.scenarios.map(s => ({
+              scenario_number: s.scenario_number,
+              target_time: s.target_period,
+              forecasted_value: s.forecasted_value,
+              last_known_value: s.comparison_value ?? undefined,
+              predicted_growth_rate_percentage: s.predicted_growth_rate_percentage ?? '',
+              predicted_growth_rate: s.predicted_growth_rate ?? undefined,
+              comparison_period: s.comparison_period ?? undefined,
+              comparison_value: s.comparison_value ?? undefined,
+            })) as any);
+            setLatestForecast(undefined as any);
+          }
+        } catch {}
+      }
+
+      // Navigate to the page that shows this turn's result
+      // Use local batchId (not chatBatchId state which may not yet be updated)
+      const bq = batchId ? `?batch=${batchId}` : '';
+      const bqs = bq ? '&' : '?';
+      let navRoute: string | null = null;
+      if (flow === 'C' || flow === 'B' || wm) {
+        navRoute = `/dashboard/world-model${bq}`;
+      } else if (shouldRefreshForecast(toolsUsed, res.forecast?.forecast_skipped)) {
+        // Any forecast run → go to forecast page
+        navRoute = `/dashboard/forecast${bq}`;
+      } else {
+        const base = getRouteForTools(toolsUsed);
+        if (base) {
+          const sep = base.includes('?') ? '&' : '?';
+          navRoute = `${base}${sep}batch=${batchId}`;
+        }
+      }
+      if (navRoute) {
+        setTimeout(() => navigate(navRoute!), 1500);
+      }
     } catch (err: any) {
       const detail = err?.response?.data?.detail || err?.message || 'Something went wrong. Please try again.';
       setTalkMessages(prev => [...prev, { sender: 'ai', text: `Error: ${detail}` }]);
@@ -428,7 +561,7 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
                 Hi {firstName}. I'm here to help you design a business case and simulation model. We can explore your strategic goals first — once we map out your core business drivers, I'll recommend the exact data needed to simulate your scenarios.
                 <div className="mt-2 font-semibold">Select a scenario to start, or describe your goals in your own words:</div>
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  {['I want to raise prices', 'Hit a growth target next year', 'Reduce operating costs', 'Reallocate marketing spend', 'Optimize tier packaging'].map((s) => (
+                  {['Run full scenario', 'I want to raise prices', 'Hit a growth target next year', 'Reduce operating costs', 'Reallocate marketing spend', 'Optimize tier packaging'].map((s) => (
                     <span
                       key={s}
                       onClick={() => handleSuggestionClick(s)}

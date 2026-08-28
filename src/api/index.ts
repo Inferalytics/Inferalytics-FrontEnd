@@ -21,6 +21,8 @@ import type {
   ListModelsResponse,
   ForecastResponse,
   GetForecastResponse,
+  ForecastScenariosResponse,
+  ScenarioCompareResponse,
   AgentRequest,
   AgentResponse,
 } from '../types/api';
@@ -214,6 +216,16 @@ export const api = {
 
   getForecast: async () => {
     const res = await axiosClient.get<GetForecastResponse>('/optimization/forecast/get');
+    return res.data;
+  },
+
+  getForecastScenarios: async () => {
+    const res = await axiosClient.get<ForecastScenariosResponse>('/optimization/forecast/scenarios');
+    return res.data;
+  },
+
+  getScenarioCompare: async () => {
+    const res = await axiosClient.get<ScenarioCompareResponse>('/optimization/scenarios/compare');
     return res.data;
   },
 

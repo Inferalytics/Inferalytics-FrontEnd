@@ -12,7 +12,45 @@ export default function SetupPanel() {
   const navigate = useNavigate();
   const [inspectedTableId, setInspectedTableId] = useState<string | null>(null);
   const [uploadLoading, setUploadLoading] = useState(false);
+  const [granularityLoading, setGranularityLoading] = useState(false);
+  const [saveDraftLoading, setSaveDraftLoading] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const PERIOD_TYPE_MAP: Record<string, string> = {
+    Day: 'daily', Week: 'weekly', Month: 'monthly', Quarter: 'quarterly', Year: 'yearly',
+  };
+
+  const handleGranularityChange = async (t: string) => {
+    setTimeGranularity(t);
+    const [startRaw, endRaw] = setup.timeRange.split(' → ');
+    if (!startRaw || !endRaw) return;
+    try {
+      setGranularityLoading(true);
+      await api.setDataTime(startRaw.trim(), endRaw.trim(), PERIOD_TYPE_MAP[t] ?? 'quarterly');
+    } catch (err) {
+      console.warn('setDataTime notice:', err);
+    } finally {
+      setGranularityLoading(false);
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    try {
+      setSaveDraftLoading(true);
+      // Persist time configuration to backend
+      const [startRaw, endRaw] = setup.timeRange.split(' → ');
+      if (startRaw && endRaw) {
+        await api.setDataTime(startRaw.trim(), endRaw.trim(), PERIOD_TYPE_MAP[setup.timeGranularity] ?? 'quarterly').catch(() => {});
+      }
+      setDraftSaved(true);
+      setTimeout(() => setDraftSaved(false), 2500);
+    } catch (err) {
+      console.warn('Save draft notice:', err);
+    } finally {
+      setSaveDraftLoading(false);
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -126,7 +164,11 @@ export default function SetupPanel() {
                 <div className="col-span-1 md:col-span-3 flex flex-wrap sm:flex-nowrap items-center gap-2">
                   <div className="flex bg-secondary p-0.5 rounded-lg border border-warm-border/40 text-[11px] font-medium text-warm-muted overflow-x-auto max-w-full no-scrollbar">
                     {['Day', 'Week', 'Month', 'Quarter', 'Year'].map((t) => (
-                      <span key={t} onClick={() => setTimeGranularity(t)} className={`px-2.5 py-1 rounded-md cursor-pointer transition-all shrink-0 ${t === setup.timeGranularity ? 'bg-white text-brand-indigo shadow-sm font-semibold' : 'hover:text-warm-text'}`}>
+                      <span
+                        key={t}
+                        onClick={() => !granularityLoading && handleGranularityChange(t)}
+                        className={`px-2.5 py-1 rounded-md cursor-pointer transition-all shrink-0 ${t === setup.timeGranularity ? 'bg-white text-brand-indigo shadow-sm font-semibold' : 'hover:text-warm-text'} ${granularityLoading ? 'opacity-60 cursor-wait' : ''}`}
+                      >
                         {t}
                       </span>
                     ))}
@@ -333,8 +375,12 @@ export default function SetupPanel() {
             }
           </span>
           <div className="flex items-center gap-2">
-            <button className="px-3 py-1.5 border border-warm-border bg-white hover:bg-secondary rounded-lg text-[12px] font-semibold text-warm-text transition-colors cursor-pointer font-sans">
-              Save Draft
+            <button
+              onClick={handleSaveDraft}
+              disabled={saveDraftLoading}
+              className="px-3 py-1.5 border border-warm-border bg-white hover:bg-secondary rounded-lg text-[12px] font-semibold text-warm-text transition-colors cursor-pointer font-sans disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {saveDraftLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : draftSaved ? '✓ Saved' : 'Save Draft'}
             </button>
             <button
               onClick={async () => {

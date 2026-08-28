@@ -42,18 +42,18 @@ export default function Header() {
   let activeStep = 0;
   if (tab === 'blueprint') activeStep = 1;
   else if (tab === 'ecr-build' || tab === 'ecr-batch') activeStep = 2;
-  else if (tab === 'ips-engine' || tab === 'workspace' || tab === 'learning') activeStep = 3;
+  else if (tab === 'ips-engine' || tab === 'learning') activeStep = 3;
 
   // Screen segmented navbar items mapped directly to browser slugs
   const screensList = [
-    { path: 'conversation', label: '01 Conversation' },
-    { path: 'blueprint',    label: '02 Blueprint' },
-    { path: 'ecr-build',    label: '03 ECR Build' },
-    { path: 'ecr-batch',    label: '04 ECR Batch' },
-    { path: 'ips-engine',   label: '05 IPS Engine' },
-    { path: 'workspace',    label: '06 Workspace' },
-    { path: 'learning',     label: '07 Learning' },
-    { path: 'world-model',  label: '08 World Model' }
+    { path: 'conversation',     label: '01 Conversation' },
+    { path: 'blueprint',        label: '02 Blueprint' },
+    { path: 'ecr-build',        label: '03 ECR Build' },
+    { path: 'ecr-batch',        label: '04 ECR Batch' },
+    { path: 'ips-engine',       label: '05 IPS Engine' },
+    { path: 'forecast',         label: '06 Forecast' },
+    { path: 'learning',         label: 'Scenario Comparison' },
+    { path: 'world-model',      label: '07 World Model' },
   ];
 
   const [availableModels, setAvailableModels] = useState<{ value: ModelType; label: string }[]>([
@@ -119,15 +119,13 @@ export default function Header() {
         </div>
 
         {/* Left Sidebar Toggle */}
-        {tab !== 'conversation' && (
-          <button
-            onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
-            className="p-1 rounded-lg bg-secondary hover:bg-muted text-warm-text border border-warm-border/50 cursor-pointer flex items-center justify-center shrink-0 transition-colors"
-            title="Toggle sidebar navigator"
-          >
-            <Menu className="h-4 w-4" />
-          </button>
-        )}
+        <button
+          onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+          className="p-1 rounded-lg bg-secondary hover:bg-muted text-warm-text border border-warm-border/50 cursor-pointer flex items-center justify-center shrink-0 transition-colors"
+          title="Toggle sidebar navigator"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
 
         <div className="flex items-center gap-3">
             {/* Batch Switcher — visible on all tabs */}
@@ -229,8 +227,7 @@ export default function Header() {
             </div>
           </div>
 
-        {tab !== 'conversation' && (
-          <div className="hidden lg:flex items-center gap-3">
+        <div className="hidden lg:flex items-center gap-3">
             {/* Model Selector */}
             <div className="relative">
               <button
@@ -305,7 +302,6 @@ export default function Header() {
               )}
             </div>
           </div>
-        )}
       </div>
 
       {/* Centre: Workflow Stepper (shown when activeStep > 0, hidden below xl viewports) */}
@@ -381,35 +377,31 @@ export default function Header() {
       {/* Right: Screen Navigation & Avatar */}
       <div className="flex items-center gap-2 sm:gap-3">
         {/* Mobile Right Sidebar Toggle */}
-        {tab !== 'conversation' && (
-          <button
-            onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
-            className="lg:hidden p-1 rounded-lg bg-secondary hover:bg-muted text-warm-text border border-warm-border/50 cursor-pointer flex items-center justify-center shrink-0"
-            title="Toggle decision panel"
-          >
-            <MessageSquare className="h-4 w-4" />
-          </button>
-        )}
+        <button
+          onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
+          className="lg:hidden p-1 rounded-lg bg-secondary hover:bg-muted text-warm-text border border-warm-border/50 cursor-pointer flex items-center justify-center shrink-0"
+          title="Toggle decision panel"
+        >
+          <MessageSquare className="h-4 w-4" />
+        </button>
 
         {/* Segmented Control */}
-        {tab !== 'conversation' && (
-          <div className="flex items-center gap-0.5 bg-secondary/80 p-0.5 rounded-full border border-warm-border/40 overflow-x-auto max-w-[150px] sm:max-w-[280px] md:max-w-[420px] lg:max-w-none no-scrollbar whitespace-nowrap">
-            {screensList.map(s => (
-              <button
-                key={s.path}
-                onClick={() => navigate(`/dashboard/${s.path}${activeBatchId ? `?batch=${activeBatchId}` : ''}`)}
-                className={`px-2 sm:px-3 py-1 rounded-full text-[11px] font-medium transition-all duration-200 cursor-pointer shrink-0 ${
-                  tab === s.path
-                    ? 'bg-white text-brand-indigo shadow-sm font-semibold'
-                    : 'text-warm-muted hover:text-warm-text hover:bg-white/40'
-                }`}
-              >
-                <span className="sm:hidden">{s.label.split(' ')[0]}</span>
-                <span className="hidden sm:inline">{s.label}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex items-center gap-0.5 bg-secondary/80 p-0.5 rounded-full border border-warm-border/40 overflow-x-auto max-w-[150px] sm:max-w-[280px] md:max-w-[420px] lg:max-w-none no-scrollbar whitespace-nowrap">
+          {screensList.map(s => (
+            <button
+              key={s.path}
+              onClick={() => navigate(`/dashboard/${s.path}${activeBatchId ? `?batch=${activeBatchId}` : ''}`)}
+              className={`px-2 sm:px-3 py-1 rounded-full text-[11px] font-medium transition-all duration-200 cursor-pointer shrink-0 ${
+                tab === s.path
+                  ? 'bg-white text-brand-indigo shadow-sm font-semibold'
+                  : 'text-warm-muted hover:text-warm-text hover:bg-white/40'
+              }`}
+            >
+              <span className="sm:hidden">{s.label.split(' ')[0]}</span>
+              <span className="hidden sm:inline">{s.label}</span>
+            </button>
+          ))}
+        </div>
 
         {/* User Button / Avatar */}
         <div className="h-7 w-7 rounded-full flex items-center justify-center relative shadow-sm border border-warm-border shrink-0">

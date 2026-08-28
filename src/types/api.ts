@@ -221,6 +221,47 @@ export type GetForecastResponse = ApiResponse<Pick<ForecastData,
   "predicted_growth_rate" | "predicted_growth_rate_percentage"
 > & { id: number; created_at: string }>;
 
+export interface ForecastScenario {
+  scenario_number: number;
+  target_time: string;
+  forecasted_value: number;
+  last_known_value?: number;
+  predicted_growth_rate_percentage: string;
+  predicted_growth_rate?: number;
+  data_range?: { start_time: string; end_time: string };
+  holt_winters_parameters?: { alpha: number; beta: number; gamma: number };
+  base_effect_warning?: string;
+  // Per-row comparison fields from multi_period responses
+  comparison_period?: string;
+  comparison_value?: number;
+  // Set to true when the backend could not compute this period (e.g. loop limit)
+  blocked?: boolean;
+  blocked_reason?: string;
+}
+
+/** One entry from a multi_period forecast tool result */
+export interface MultiForecastEntry {
+  scenario_number: number;
+  target_period: string;
+  forecasted_value: number;
+  predicted_growth_rate: number;     // decimal, e.g. 0.511 = 51.1%
+  comparison_period: string;
+  comparison_value: number;
+}
+
+/** Shape of forecast_result on AgentResponse */
+export interface AgentForecastResult {
+  multi_period: boolean;
+  forecasts: MultiForecastEntry[];
+  // Also present on single-period results
+  target_time?: string;
+  forecasted_value?: number;
+  last_known_value?: number;
+  predicted_growth_rate_percentage?: string;
+  data_range?: { start_time: string; end_time: string };
+  holt_winters_parameters?: { alpha: number; beta: number; gamma: number };
+}
+
 // ─── Scenario Results ─────────────────────────────────────────────────────────
 
 /** Parameters stored per scenario for what-if comparison */
@@ -266,7 +307,7 @@ export interface ScenarioComparisonResult {
   recommendation: string;              // Human-readable explanation
 }
 
-export interface ForecastScenario {
+export interface ForecastScenarioEntry {
   scenario_number: number;
   scenario_label?: string;
   target_period: string;
@@ -282,12 +323,308 @@ export interface ForecastScenario {
 export interface ForecastScenarioComparisonResult {
   success: boolean;
   total_scenarios: number;
-  scenarios: ForecastScenario[];
+  scenarios: ForecastScenarioEntry[];
   best_scenario: number;
   best_scenario_label?: string | null;
   best_target_period?: string;
   best_forecasted_value?: number;
   recommendation: string;
+}
+
+export interface ForecastScenarioResult {
+  scenario_number: number;
+  scenario_label?: string;
+  target_period: string;
+  forecasted_value: number;
+  predicted_growth_rate: number;
+  predicted_growth_rate_percentage: string;
+  comparison_period: string;
+  comparison_value: number;
+  periods_ahead: number;
+  created_at: string;
+}
+
+export interface HistoricalValues {
+  start_period: string;
+  end_period: string;
+  values: number[];
+}
+
+export interface ForecastScenariosMetadata {
+  total_scenarios: number;
+  periods_forecasted: string[];
+  batch_id: string;
+}
+
+export interface ForecastScenariosResponse {
+  has_results: boolean;
+  scenarios: ForecastScenarioResult[];
+  historical_values: HistoricalValues | null;
+  metadata: ForecastScenariosMetadata;
+  latest_forecast: {
+    scenario_number: number;
+    scenario_label: string;
+    target_period: string;
+    forecasted_value: number;
+    predicted_growth_rate_percentage: string | null;
+  } | null;
+}
+
+export interface ForecastPipelineResult {
+  success: boolean;
+  steps_executed: string[];
+  scenario: ForecastScenarioResult | null;
+  comparison: ScenarioCompareResponse | null;
+  forecast_skipped?: boolean;
+  warnings?: string[];
+}
+
+// ─── Forecast Scenario Compare ────────────────────────────────────────────────
+
+export interface ScenarioCompareResult {
+  rank: number;
+  scenario_number: number;
+  scenario_label: string;
+  target_period: string;
+  forecasted_value: number;
+  predicted_growth_rate: number;
+  predicted_growth_rate_percentage: string;
+  comparison_period: string;
+  comparison_value: number;
+  periods_ahead: number;
+}
+
+export interface ScenarioCompareResponse {
+  success: boolean;
+  total_scenarios: number;
+  multi_period: boolean;
+  rank_basis: 'forecasted_value' | 'predicted_growth_rate';
+  unique_periods: string[];
+  scenarios: ScenarioCompareResult[];
+  best_scenario: number;
+  best_scenario_label: string;
+  best_target_period: string;
+  best_forecasted_value: number;
+  best_growth_rate_percentage: string;
+  recommendation: string;
+}
+
+// ─── Batch Session ───────────────────────────────────────────────────────────
+
+export interface SessionBatch {
+  batch_id: string;
+  batch_name: string;
+  created_at: string;
+  is_active: boolean;
+}
+
+export interface BatchSessionResponse {
+  success: boolean;
+  message?: string;
+  has_batches: boolean;
+  requires_onboarding: boolean;
+  active_batch: SessionBatch | null;
+  batches: SessionBatch[];
+  total_count: number;
+}
+
+// ─── World Model ─────────────────────────────────────────────────────────────
+
+export type GrowthStrategy =
+  | "balanced"
+  | "leader_led"
+  | "catch_up"
+  | "front_loaded"
+  | "back_loaded";
+
+export interface OptimizationParams {
+  learning_rate: number;
+  scale_factor: number;
+  max_iterations: number;
+  tolerance: number;
+}
+
+export interface DSDecision {
+  reasoning: string;
+  strategy_chosen: GrowthStrategy;
+  data_insight: string;
+}
+
+export interface DEDecision {
+  reasoning: string;
+  learning_rate_chosen: number;
+  vector_modification: string;
+}
+
+export interface OptimizationResult {
+  iterations: number;
+  converged: boolean;
+  convergence_error: number | null;
+  final_egr: number;
+  final_egr_percentage: string;
+}
+
+export interface DistributionDifference {
+  mard: number;
+  mard_percentage: string;
+  cosine_similarity: number;
+  cosine_distance: number;
+  top_quartile_share_delta: number;
+  bottom_quartile_share_delta: number;
+  is_meaningfully_different: boolean;
+  retry_was_needed: boolean;
+  scale_factor_used: number;
+  validation_verdict: string;
+}
+
+export interface ChangesFromPrevious {
+  egr_target_delta: number;
+  previous_scenario_number: number;
+  previous_scenario_label: string | null;
+}
+
+export interface ComparisonScenario {
+  scenario_number: number;
+  scenario_label: string | null;
+  target_egr: number;
+  target_egr_percentage: string;
+  final_egr: number;
+  final_egr_percentage: string;
+  converged: boolean;
+  iterations: number;
+  variance_from_target: string;
+}
+
+export interface ScenarioComparison {
+  success: boolean;
+  batch_id: string;
+  total_scenarios: number;
+  scenarios: ComparisonScenario[];
+  recommendation: string | null;
+}
+
+// ─── World Model Tree ─────────────────────────────────────────────────────────
+
+export interface HierarchyLevel {
+  level: "total" | "macro_category" | "category" | "data_point";
+  label: string;
+  description: string;
+}
+
+export interface HierarchySchema {
+  is_semantic: boolean;
+  levels: HierarchyLevel[];
+  macro_field?: string;
+  category_field?: string;
+}
+
+export interface DataPointMetric {
+  label: string;
+  column: string;
+  delta: number;
+  change_pct: string;
+  egr_contribution_pct: string;
+}
+
+export interface MacroMetric {
+  label: string;
+  delta: number;
+  egr_contribution_pct: string;
+  role: "driver" | "laggard" | "neutral";
+  change_pct?: string;
+  original_value?: number;
+  final_value?: number;
+}
+
+export interface TreeRelationships {
+  achieves_target_via: string;
+  influenced_by: string[];
+  top_growth_drivers: DataPointMetric[];
+  top_laggards: DataPointMetric[];
+  macro_growth_ranking: MacroMetric[];
+  fixed_points_count: number;
+  fixed_points_held_constant: number[];
+}
+
+export interface DataPoint {
+  type: "data_point";
+  vector_index: number;
+  label: string;
+  column: string;
+  row_labels: Record<string, string>;
+  original_value: number;
+  final_value: number;
+  delta: number;
+  change_pct: string;
+  egr_contribution_pct: string;
+  status: "increased" | "decreased" | "unchanged" | "fixed";
+}
+
+export interface TreeCategory {
+  type: "category";
+  label: string;
+  original_value: number;
+  final_value: number;
+  delta: number;
+  change_pct: string;
+  egr_contribution_pct: string;
+  data_points_count: number;
+  data_points: DataPoint[];
+}
+
+export interface MacroCategory {
+  type: "macro_category";
+  label: string;
+  original_value: number;
+  final_value: number;
+  delta: number;
+  change_pct: string;
+  egr_contribution_pct: string;
+  categories_count: number;
+  categories: TreeCategory[];
+}
+
+export interface WorldModelTreeType {
+  type: "egr_root";
+  label: string;
+  target_egr: number;
+  final_egr: number;
+  target_egr_pct: string;
+  final_egr_pct: string;
+  converged: boolean;
+  original_total: number;
+  final_total: number;
+  total_delta: number;
+  total_change_pct: string;
+  hierarchy_schema: HierarchySchema;
+  relationships: TreeRelationships;
+  macro_categories: MacroCategory[];
+}
+
+export interface WorldModel {
+  scenario_id: string;
+  scenario_number: number;
+  scenario_label: string;
+  batch_id: string;
+
+  egr_target: number;
+  egr_target_percentage: string;
+
+  growth_strategy: GrowthStrategy;
+  optimization_method: "newton_raphson";
+
+  optimization_params: OptimizationParams;
+  ds_decision: DSDecision | null;
+  de_decision: DEDecision | null;
+  reasoning_summary: string | null;
+
+  optimization_result: OptimizationResult;
+  status: "converged" | "not_converged";
+
+  distribution_difference: DistributionDifference | null;
+  changes_from_previous: ChangesFromPrevious | null;
+  comparison: ScenarioComparison | null;
+  world_model_tree: WorldModelTreeType | null;
 }
 
 // ─── AI Agent ─────────────────────────────────────────────────────────────────
@@ -309,4 +646,6 @@ export interface AgentResponse {
   iterations: number;
   tools_used: string[];
   error: string | null;
+  world_model: WorldModel | null;
+  forecast: ForecastPipelineResult | null;
 }

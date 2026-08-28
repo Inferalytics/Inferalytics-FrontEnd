@@ -1,5 +1,6 @@
 import axiosClient from './axiosClient';
 import type {
+  BatchSessionResponse,
   CreateBatchResponse,
   ListBatchResponse,
   SwitchBatchResponse,
@@ -20,6 +21,8 @@ import type {
   ListModelsResponse,
   ForecastResponse,
   GetForecastResponse,
+  ForecastScenariosResponse,
+  ScenarioCompareResponse,
   AgentRequest,
   AgentResponse,
 } from '../types/api';
@@ -53,6 +56,11 @@ export const api = {
   },
 
   // ─── Batching ─────────────────────────────────────────────────────────────
+  getBatchSession: async () => {
+    const res = await axiosClient.get<BatchSessionResponse>('/batching/session');
+    return res.data;
+  },
+
   createBatch: async (batchName: string) => {
     const res = await axiosClient.post<CreateBatchResponse>('/batching/create', { batch_name: batchName });
     return res.data;
@@ -208,6 +216,16 @@ export const api = {
 
   getForecast: async () => {
     const res = await axiosClient.get<GetForecastResponse>('/optimization/forecast/get');
+    return res.data;
+  },
+
+  getForecastScenarios: async () => {
+    const res = await axiosClient.get<ForecastScenariosResponse>('/optimization/forecast/scenarios');
+    return res.data;
+  },
+
+  getScenarioCompare: async () => {
+    const res = await axiosClient.get<ScenarioCompareResponse>('/optimization/scenarios/compare');
     return res.data;
   },
 

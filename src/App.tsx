@@ -1,10 +1,37 @@
-import React from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[ErrorBoundary]', error, info.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 32, fontFamily: 'monospace', color: '#c00' }}>
+          <strong>App crashed:</strong>
+          <pre style={{ whiteSpace: 'pre-wrap', marginTop: 8, fontSize: 12 }}>
+            {this.state.error.message}
+            {'\n'}
+            {this.state.error.stack}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import { ClerkProvider, useAuth } from '@clerk/clerk-react';
 import SignInPage from './pages/SignInPage';
 import SignUpPage from './pages/SignUpPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import DashboardPage from './pages/DashboardPage';
+import BatchSelectionPage from './pages/BatchSelectionPage';
 import { setClerkTokenFetcher } from './api/axiosClient';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || 'pk_test_bW9jay1jbGVyay1rZXktMTAwLmNsZXJrLmFjY291bnRzLmRldiQ';
@@ -20,7 +47,6 @@ function ClerkTokenBridge() {
     setClerkTokenFetcher((options) => getToken(options));
   }, [getToken]);
 
-  // Exchange Clerk JWT for long-lived backend API key on login if not already stored
   React.useEffect(() => {
     if (!isSignedIn) {
       localStorage.removeItem(STORAGE_KEY);
@@ -38,7 +64,6 @@ function ClerkTokenBridge() {
           localStorage.setItem(STORAGE_KEY, res.access_token);
         }
       } catch (e) {
-        // Clear any bad key to ensure clean fallback to standard Clerk JWT header
         localStorage.removeItem(STORAGE_KEY);
         console.warn('API key exchange notice (falling back to Clerk JWT):', e);
       }
@@ -58,12 +83,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function GuestRoute({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   if (!isLoaded) return null;
-  if (isSignedIn) return <Navigate to="/dashboard/conversation" replace />;
+  if (isSignedIn) return <Navigate to="/batch-select" replace />;
   return <>{children}</>;
 }
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
       <ClerkTokenBridge />
       <BrowserRouter>
@@ -73,8 +99,11 @@ export default function App() {
           <Route path="/sign-up" element={<GuestRoute><SignUpPage /></GuestRoute>} />
           <Route path="/forgot-password" element={<GuestRoute><ForgotPasswordPage /></GuestRoute>} />
 
-          {/* Redirect bare /dashboard to conversation tab */}
-          <Route path="/dashboard" element={<Navigate to="/dashboard/conversation" replace />} />
+          {/* Batch selection — shown immediately after login */}
+          <Route path="/batch-select" element={<ProtectedRoute><BatchSelectionPage /></ProtectedRoute>} />
+
+          {/* Redirect bare /dashboard to batch selection */}
+          <Route path="/dashboard" element={<Navigate to="/batch-select" replace />} />
 
           <Route path="/dashboard/:tab"         element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/dashboard/:tab/:subtab" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
@@ -83,5 +112,6 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </ClerkProvider>
+    </ErrorBoundary>
   );
 }

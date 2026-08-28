@@ -94,6 +94,8 @@ export interface GlobalState {
   activeBatchId: string;
   model: ModelType;
   conversation: Message[];
+  /** Per-batch conversation history, persisted to localStorage (last 30 msgs each) */
+  perBatchConversations: Record<string, Message[]>;
   setup: SetupState;
   relationships: Relationship[];
   growthRates: GrowthRate[];
@@ -101,6 +103,15 @@ export interface GlobalState {
   egrTarget: number;
   scenarios: Scenario[];
   optimisationResult: OptimisationResult | null;
+  dataBatchId: string | null;
+  latestForecast: import('./api').ForecastData | null;
+  setLatestForecast: (data: import('./api').ForecastData | null) => void;
+  forecastScenarios: import('./api').ForecastScenario[];
+  addForecastScenario: (s: import('./api').ForecastScenario) => void;
+  setForecastScenarios: (scenarios: import('./api').ForecastScenario[]) => void;
+  clearForecastScenarios: () => void;
+  worldModels: import('./api').WorldModel[];
+  addWorldModel: (wm: import('./api').WorldModel) => void;
   selectedProvenanceMetric: string | null;
   setSelectedProvenanceMetric: (metric: string | null) => void;
   provenanceConversations: Record<string, Message[]>;
@@ -128,10 +139,22 @@ export interface GlobalState {
   setLeftSidebarOpen: (open: boolean) => void;
   setRightSidebarOpen: (open: boolean) => void;
 
+  /** Tracks which stage of the full-scenario pipeline is actively running */
+  pipelineStage: 'forecast' | 'ips' | null;
+  setPipelineStage: (stage: 'forecast' | 'ips' | null) => void;
+
+
   // Async API Action helpers
   fetchBatchesFromApi?: () => Promise<void>;
   createBatchApi?: (name: string) => Promise<string>;
   switchBatchApi?: (id: string) => Promise<void>;
   deleteBatchApi?: (id: string) => Promise<void>;
   syncBackendState?: () => Promise<void>;
+
+  /** End-to-end pipeline: Forecast → IPS Optimisation → World Model */
+  runFullScenario?: (opts: {
+    navigate: (path: string) => void;
+    triggerToast?: (msg: string) => void;
+    batchQuery?: string;
+  }) => Promise<void>;
 }

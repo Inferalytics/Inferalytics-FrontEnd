@@ -13,7 +13,9 @@ const TOP_OFFSET = 12;
 interface Line { x1: number; y1: number; x2: number; y2: number }
 
 export default function BuildPanel() {
-  const { relationships, toggleRelationshipConfirmed, growthRates, setup, scenarios } = useStore();
+  const { relationships, toggleRelationshipConfirmed, growthRates, setup, scenarios, activeBatchId, dataBatchId } = useStore();
+  // Only show growth rates that were loaded for the current batch
+  const batchGrowthRates = dataBatchId === activeBatchId ? growthRates : [];
   const navigate = useNavigate();
 
   // Real dimensions derived from the actual uploaded batch's parameters/segments
@@ -273,7 +275,7 @@ export default function BuildPanel() {
                 </tr>
               </thead>
               <tbody>
-                {growthRates.map((gr, gi) => (
+                {batchGrowthRates.map((gr, gi) => (
                   <tr
                     key={gi}
                     ref={el => { rowRefs.current[gi] = el; }}
@@ -295,7 +297,7 @@ export default function BuildPanel() {
             </table>
 
             <div className="px-4 py-2.5 bg-warm-bg/30 border-t border-warm-border/60 flex items-center justify-between text-[10.5px]">
-              <span className="text-warm-muted">Baseline growth · {growthRates.length} segment{growthRates.length === 1 ? '' : 's'} shown</span>
+              <span className="text-warm-muted">Baseline growth · {batchGrowthRates.length} segment{batchGrowthRates.length === 1 ? '' : 's'} shown</span>
               <span className="text-brand-indigo font-sans font-semibold hover:underline cursor-pointer">Expand all →</span>
             </div>
           </div>

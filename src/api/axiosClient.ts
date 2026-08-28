@@ -24,12 +24,6 @@ export const clearStoredApiKey = () => {
 
 axiosClient.interceptors.request.use(
   async (config) => {
-    // If VITE_DEV_BYPASS_AUTH is explicitly true, skip Authorization header entirely (Section 5 of frontend_auth.md)
-    if (import.meta.env.VITE_DEV_BYPASS_AUTH === 'true') {
-      delete config.headers.Authorization;
-      return config;
-    }
-
     // 1. Check for long-lived backend API key in localStorage (Mode 1 - Section 3 of frontend_auth.md)
     const storedApiKey = localStorage.getItem(STORAGE_KEY);
     if (storedApiKey) {
@@ -86,10 +80,7 @@ axiosClient.interceptors.response.use(
         }
       }
 
-      // If token refresh wasn't possible or failed, attempt unsanitized request
-      // in case backend is running in DEV_BYPASS_AUTH mode
-      delete originalRequest.headers.Authorization;
-      return axiosClient(originalRequest);
+      return Promise.reject(error);
     }
 
     return Promise.reject(error);

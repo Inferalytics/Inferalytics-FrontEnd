@@ -29,9 +29,7 @@ export default function WorldModelPage() {
     }
   };
 
-  // On mount: if Zustand's worldModels is empty, restore from:
-  //   1. module-level cache (survives route changes in same session)
-  //   2. sessionStorage (survives page refresh — stored without tree)
+  // On mount: restore worldModels from cache/sessionStorage if missing or missing trees
   useEffect(() => {
     if (worldModels.length === 0) {
       // Try module-level cache first (has full tree)
@@ -40,16 +38,22 @@ export default function WorldModelPage() {
         cached.forEach(wm => addWorldModel(wm));
         return;
       }
-      // Fall back to sessionStorage (compact, no tree)
-      if (activeBatchId) {
-        try {
-          const raw = sessionStorage.getItem(`wm_batch_${activeBatchId}`);
-          if (raw) {
-            const stored: WorldModel[] = JSON.parse(raw);
-            stored.forEach(wm => addWorldModel(wm));
-          }
-        } catch { /* ignore parse errors */ }
-      }
+    }
+    // Always re-attach trees from sessionStorage for any model missing its tree
+    if (activeBatchId) {
+      try {
+        const raw = sessionStorage.getItem(`wm_batch_${activeBatchId}`);
+        if (raw) {
+          const stored: WorldModel[] = JSON.parse(raw);
+          const withTrees = stored.map(wm => {
+            try {
+              const treeRaw = sessionStorage.getItem(`wm_tree_${wm.scenario_id}`);
+              return treeRaw ? { ...wm, world_model_tree: JSON.parse(treeRaw) } : wm;
+            } catch { return wm; }
+          });
+          withTrees.forEach(wm => addWorldModel(wm));
+        }
+      } catch { /* ignore parse errors */ }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBatchId]);

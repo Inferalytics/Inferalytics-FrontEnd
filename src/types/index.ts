@@ -106,10 +106,14 @@ export interface GlobalState {
   dataBatchId: string | null;
   latestForecast: import('./api').ForecastData | null;
   setLatestForecast: (data: import('./api').ForecastData | null) => void;
+  /** Per-batch forecast, persisted to localStorage */
+  perBatchForecasts: Record<string, import('./api').ForecastData>;
   forecastScenarios: import('./api').ForecastScenario[];
   addForecastScenario: (s: import('./api').ForecastScenario) => void;
   setForecastScenarios: (scenarios: import('./api').ForecastScenario[]) => void;
   clearForecastScenarios: () => void;
+  /** Per-batch forecast scenarios, persisted to localStorage */
+  perBatchForecastScenarios: Record<string, import('./api').ForecastScenario[]>;
   worldModels: import('./api').WorldModel[];
   addWorldModel: (wm: import('./api').WorldModel) => void;
   selectedProvenanceMetric: string | null;

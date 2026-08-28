@@ -113,16 +113,33 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
   optimisationResult: null,
   dataBatchId: null as string | null,
   latestForecast: null,
-  setLatestForecast: (data) => set({ latestForecast: data }),
+  perBatchForecasts: {} as Record<string, import('../types/api').ForecastData>,
+  setLatestForecast: (data) => {
+    const batchId = get().activeBatchId;
+    const perBatchForecasts = data && batchId
+      ? { ...get().perBatchForecasts, [batchId]: data }
+      : get().perBatchForecasts;
+    set({ latestForecast: data, perBatchForecasts });
+  },
   forecastScenarios: [],
+  perBatchForecastScenarios: {} as Record<string, import('../types/api').ForecastScenario[]>,
   addForecastScenario: (s) => {
     const existing = get().forecastScenarios;
-    // Dedupe by scenario_number; newer entry wins
     const deduped = existing.filter(e => e.scenario_number !== s.scenario_number);
-    set({ forecastScenarios: [...deduped, s].sort((a, b) => a.scenario_number - b.scenario_number) });
+    const updated = [...deduped, s].sort((a, b) => a.scenario_number - b.scenario_number);
+    const batchId = get().activeBatchId;
+    const perBatchForecastScenarios = batchId
+      ? { ...get().perBatchForecastScenarios, [batchId]: updated }
+      : get().perBatchForecastScenarios;
+    set({ forecastScenarios: updated, perBatchForecastScenarios });
   },
   setForecastScenarios: (scenarios) => {
-    set({ forecastScenarios: [...scenarios].sort((a, b) => a.scenario_number - b.scenario_number) });
+    const sorted = [...scenarios].sort((a, b) => a.scenario_number - b.scenario_number);
+    const batchId = get().activeBatchId;
+    const perBatchForecastScenarios = batchId
+      ? { ...get().perBatchForecastScenarios, [batchId]: sorted }
+      : get().perBatchForecastScenarios;
+    set({ forecastScenarios: sorted, perBatchForecastScenarios });
   },
   clearForecastScenarios: () => set({ forecastScenarios: [] }),
   worldModels: [],
@@ -147,15 +164,30 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
     if (!isSameBatch && state.activeBatchId) {
       savedConvos[state.activeBatchId] = state.conversation.filter(m => !m.isTyping).slice(-30);
     }
-
     // Restore conversation for the target batch (or start fresh)
     const restoredConv = (!isSameBatch && savedConvos[id])
       ? savedConvos[id]
       : (isSameBatch ? state.conversation : INITIAL_CONVERSATION);
 
+    // Save & restore forecast per batch
+    const savedForecasts = { ...state.perBatchForecasts };
+    if (!isSameBatch && state.activeBatchId && state.latestForecast) {
+      savedForecasts[state.activeBatchId] = state.latestForecast;
+    }
+    const restoredForecast = (!isSameBatch && savedForecasts[id]) ? savedForecasts[id] : (isSameBatch ? state.latestForecast : null);
+
+    // Save & restore forecast scenarios per batch
+    const savedForecastScenarios = { ...state.perBatchForecastScenarios };
+    if (!isSameBatch && state.activeBatchId && state.forecastScenarios.length > 0) {
+      savedForecastScenarios[state.activeBatchId] = state.forecastScenarios;
+    }
+    const restoredForecastScenarios = (!isSameBatch && savedForecastScenarios[id]) ? savedForecastScenarios[id] : (isSameBatch ? state.forecastScenarios : []);
+
     set({
       activeBatchId: id,
       perBatchConversations: savedConvos,
+      perBatchForecasts: savedForecasts,
+      perBatchForecastScenarios: savedForecastScenarios,
       batches: state.batches.map((b) => ({
         ...b,
         status: b.id === id ? 'active' : b.status === 'active' ? 'idle' : b.status
@@ -164,8 +196,8 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
       ...(isSameBatch ? {} : {
         worldModels: [],
         scenarios: [],
-        latestForecast: null,
-        forecastScenarios: [],
+        latestForecast: restoredForecast,
+        forecastScenarios: restoredForecastScenarios,
         optimisationResult: null,
         dataBatchId: null,
         growthRates: INITIAL_GROWTH_RATES,
@@ -176,6 +208,15 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
         provenanceConversations: {},
       }),
     });
+    // Restore worldModels from sessionStorage whenever they are empty — covers
+    // both page refresh (isSameBatch=true, worldModels never touched) and
+    // batch switch (isSameBatch=false, worldModels reset to [] above).
+    if (get().worldModels.length === 0) {
+      try {
+        const stored = sessionStorage.getItem(`wm_batch_${id}`);
+        if (stored) set({ worldModels: JSON.parse(stored) });
+      } catch { /* ignore parse errors */ }
+    }
     if (get().syncBackendState) {
       void get().syncBackendState!();
     }
@@ -461,7 +502,18 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
         console.warn('Failed to extract real data content metadata:', err);
       }
 
-
+      // 3. Sync Optimisation Results
+      try {
+        const nrRes = await api.retrieveOptimization().catch(() => null);
+        if (nrRes?.data) {
+          const nr = nrRes.data;
+          const finalPct = ((nr.final_egr - 1) * 100).toFixed(2);
+          const targetPct = ((nr.target_egr - 1) * 100).toFixed(2);
+          const updatedMetrics = get().workspaceMetrics.map(m =>
+            m.name === 'EGR Achieved'
+              ? { ...m, value: `${finalPct}%`, delta: `↑ +${finalPct}pp`, dir: 'up' as const }
+              : m
+          );
           const currentScenarios = [...get().scenarios];
           const newScenarioItem = {
             id: `opt-${Date.now()}`,
@@ -533,7 +585,7 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
     // Keep module-level cache in sync so data survives route changes
     addToWorldModelsCache(tagged);
     // Persist to sessionStorage (survives page refresh within same tab session)
-    // Strip world_model_tree to stay within sessionStorage quota limits
+    // Store the tree separately per scenario to avoid blowing the batch key quota
     try {
       const batchId = tagged.batch_id;
       const storageKey = `wm_batch_${batchId}`;
@@ -542,6 +594,11 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
         .map(({ world_model_tree: _tree, ...rest }) => rest);
       sessionStorage.setItem(storageKey, JSON.stringify(compact));
     } catch { /* ignore quota errors — module cache still works */ }
+    if (tagged.world_model_tree) {
+      try {
+        sessionStorage.setItem(`wm_tree_${tagged.scenario_id}`, JSON.stringify(tagged.world_model_tree));
+      } catch { /* ignore quota errors */ }
+    }
     set({ worldModels: updated });
 
     // Convert WorldModel → Scenario for ResultsPanel/ComparePanel
@@ -954,7 +1011,9 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
     leftSidebarOpen: state.leftSidebarOpen,
     rightSidebarOpen: state.rightSidebarOpen,
     egrTarget:       state.egrTarget,
-    latestForecast:  state.latestForecast,
+    // Per-batch forecast (replaces single latestForecast — batch-isolated)
+    perBatchForecasts: state.perBatchForecasts,
+    perBatchForecastScenarios: state.perBatchForecastScenarios,
     // Active conversation (last 30 non-typing messages)
     conversation: state.conversation.filter(m => !m.isTyping).slice(-30),
     // Per-batch conversation history (last 30 msgs each batch)
@@ -978,6 +1037,33 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
     removeItem: (name) => {
       try { localStorage.removeItem(name); } catch { /* ignore */ }
     },
+  },
+  // After Zustand rehydrates from localStorage, immediately restore worldModels
+  // from sessionStorage. This runs before any component mounts, so the page
+  // never sees an empty worldModels on refresh.
+  onRehydrateStorage: () => (state) => {
+    if (!state || !state.activeBatchId) return;
+    const id = state.activeBatchId;
+    // Restore worldModels from sessionStorage
+    try {
+      const stored = sessionStorage.getItem(`wm_batch_${id}`);
+      if (stored) {
+        const models = JSON.parse(stored);
+        state.worldModels = models.map((wm: { scenario_id: string }) => {
+          try {
+            const treeRaw = sessionStorage.getItem(`wm_tree_${wm.scenario_id}`);
+            return treeRaw ? { ...wm, world_model_tree: JSON.parse(treeRaw) } : wm;
+          } catch { return wm; }
+        });
+      }
+    } catch { /* ignore */ }
+    // Restore latestForecast and forecastScenarios for the active batch
+    if (state.perBatchForecasts?.[id]) {
+      state.latestForecast = state.perBatchForecasts[id];
+    }
+    if (state.perBatchForecastScenarios?.[id]) {
+      state.forecastScenarios = state.perBatchForecastScenarios[id];
+    }
   },
 }
 ));

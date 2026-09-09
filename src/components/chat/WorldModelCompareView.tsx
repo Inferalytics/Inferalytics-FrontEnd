@@ -220,28 +220,35 @@ export default function WorldModelCompareView({ worldModels }: Props) {
       </div>
 
       {/* ── Scenario cards ─────────────────────────────────────────────────── */}
-      <div className={`grid gap-4 ${sorted.length <= 2 ? 'grid-cols-2' : sorted.length === 3 ? 'grid-cols-3' : 'grid-cols-2 xl:grid-cols-4'}`}>
+      <div className={`grid gap-3.5 ${
+        sorted.length <= 2 ? 'grid-cols-1 sm:grid-cols-2' :
+        sorted.length === 3 ? 'grid-cols-1 sm:grid-cols-3' :
+        sorted.length === 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' :
+        'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5'
+      }`}>
         {sorted.map((wm, i) => {
           const meta     = getStrategy(wm);
           const isBest   = wm.scenario_id === best.scenario_id;
           const achieved = parseP(wm.optimization_result.final_egr_percentage);
           const target   = parseP(wm.egr_target_percentage);
+          const rawLabel = wm.scenario_label || `Scenario ${wm.scenario_number}`;
+          const cleanLabel = rawLabel.replace(/^Scenario\s*\d+\s*[-—:]\s*/i, '');
 
           return (
             <div key={wm.scenario_id}
-              className="flex flex-col gap-3 px-4 py-4 bg-white rounded-2xl border shadow-sm"
+              className="flex flex-col gap-3 px-3.5 py-3.5 bg-white rounded-2xl border shadow-sm min-w-0 overflow-hidden"
               style={{ borderColor: isBest ? meta.color : '#EFECE8',
                 boxShadow: isBest ? `0 0 0 2px ${meta.color}25` : undefined }}>
 
               {/* Scenario header */}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <span className="h-6 w-6 rounded-lg flex items-center justify-center text-white text-[10px] font-black shrink-0"
                     style={{ backgroundColor: SCENARIO_COLORS[i % SCENARIO_COLORS.length] }}>
                     S{wm.scenario_number}
                   </span>
-                  <span className="text-[11px] font-bold text-warm-text truncate">
-                    {wm.scenario_label || `Scenario ${wm.scenario_number}`}
+                  <span className="text-[11.5px] font-bold text-warm-text truncate" title={rawLabel}>
+                    {cleanLabel}
                   </span>
                 </div>
                 {isBest && <Trophy className="h-3.5 w-3.5 shrink-0" style={{ color: meta.color }} />}
@@ -257,18 +264,18 @@ export default function WorldModelCompareView({ worldModels }: Props) {
               </div>
 
               {/* KPIs */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="flex flex-col gap-0.5 px-2.5 py-2 bg-warm-bg rounded-xl">
-                  <div className="text-[8px] text-warm-muted font-semibold uppercase tracking-wider">Target</div>
-                  <div className="text-[15px] font-black text-warm-text">{wm.egr_target_percentage}</div>
+              <div className="grid grid-cols-2 gap-1.5 min-w-0">
+                <div className="flex flex-col gap-0.5 px-2 py-1.5 bg-warm-bg rounded-xl min-w-0">
+                  <div className="text-[8px] text-warm-muted font-semibold uppercase tracking-wider truncate">Target</div>
+                  <div className="text-[13.5px] font-black text-warm-text truncate">{wm.egr_target_percentage}</div>
                 </div>
-                <div className="flex flex-col gap-0.5 px-2.5 py-2 rounded-xl"
+                <div className="flex flex-col gap-0.5 px-2 py-1.5 rounded-xl min-w-0"
                   style={{ backgroundColor: wm.optimization_result.converged ? '#F0FDF4' : '#FFFBEB' }}>
-                  <div className="text-[8px] font-semibold uppercase tracking-wider"
+                  <div className="text-[8px] font-semibold uppercase tracking-wider truncate"
                     style={{ color: wm.optimization_result.converged ? '#16A34A' : '#B45309' }}>
                     Achieved
                   </div>
-                  <div className="text-[15px] font-black" style={{ color: wm.optimization_result.converged ? '#16A34A' : '#D97706' }}>
+                  <div className="text-[13.5px] font-black truncate" style={{ color: wm.optimization_result.converged ? '#16A34A' : '#D97706' }}>
                     {wm.optimization_result.final_egr_percentage}
                   </div>
                 </div>

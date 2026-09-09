@@ -11,17 +11,16 @@ interface OptimisePanelProps {
   triggerToast: (msg: string) => void;
 }
 
-const CARD_W = 224;
-const CARD_H = 140;
+const CARD_W = 240;
+const CARD_H = 160;
 
 const INITIAL_POSITIONS: Record<string, { x: number; y: number }> = {
-  qtr:    { x: 40,  y: 80  },
-  rev:    { x: 300, y: 80  },
-  reg:    { x: 560, y: 60  },
-  prod:   { x: 40,  y: 280 },
-  cost:   { x: 300, y: 280 },
-  margin: { x: 560, y: 280 },
-  egr:    { x: 300, y: 480 },
+  qtr:    { x: 180, y: 40  },
+  rev:    { x: 460, y: 40  },
+  reg:    { x: 40,  y: 250 },
+  prod:   { x: 40,  y: 250 },
+  cost:   { x: 320, y: 250 },
+  margin: { x: 600, y: 250 },
 };
 
 interface Connection {
@@ -43,15 +42,122 @@ const INITIAL_CONNECTIONS: Connection[] = [
   { id: 'cost-egr',   from: 'cost', to: 'egr',    color: '#6E69BE', weight: 2.0, dashed: false, isDefault: true },
 ];
 
-function computePath(fp: { x: number; y: number }, tp: { x: number; y: number }): string {
-  const sameCol = Math.abs((fp.x + CARD_W / 2) - (tp.x + CARD_W / 2)) < 40;
-  if (sameCol) {
-    const x1 = fp.x + CARD_W / 2, y1 = fp.y + CARD_H;
-    const x2 = tp.x + CARD_W / 2, y2 = tp.y;
-    const my = (y1 + y2) / 2;
-    return `M ${x1},${y1} C ${x1},${my} ${x2},${my} ${x2},${y2}`;
+function getCardDimensions(id: string, isEgrForecast: boolean) {
+  const width = id === 'egr' && isEgrForecast ? 250 : 240;
+  let height = 150;
+  if (id === 'egr') {
+    height = isEgrForecast ? 220 : 160;
+  } else if (id.startsWith('seg-') || id === 'reg' || id === 'margin' || id === 'prod') {
+    height = 180;
+  } else if (id.startsWith('param-') || id === 'rev' || id === 'cost') {
+    height = 165;
   }
-  return directBezier(fp.x + CARD_W, fp.y + CARD_H / 2, tp.x, tp.y + CARD_H / 2);
+  return { width, height };
+}
+
+interface ConnectionGeom {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  path: string;
+  midX: number;
+  midY: number;
+  arrowTip: { x: number; y: number };
+  isVertical: boolean;
+}
+
+function getConnectionGeom(
+  fromId: string,
+  toId: string,
+  fp: { x: number; y: number },
+  tp: { x: number; y: number },
+  isEgrForecast: boolean
+): ConnectionGeom {
+  const dimA = getCardDimensions(fromId, isEgrForecast);
+  const dimB = getCardDimensions(toId, isEgrForecast);
+
+  const acx = fp.x + dimA.width / 2;
+  const acy = fp.y + dimA.height / 2;
+  const bcx = tp.x + dimB.width / 2;
+  const bcy = tp.y + dimB.height / 2;
+
+  // Check if target is in a lower row
+  if (tp.y >= fp.y + dimA.height * 0.6) {
+    const startX = acx;
+    const startY = fp.y + dimA.height;
+    const endX = bcx;
+    const endY = tp.y;
+    const my = (startY + endY) / 2;
+    return {
+      startX,
+      startY,
+      endX,
+      endY,
+      path: `M ${startX},${startY} C ${startX},${my} ${endX},${my} ${endX},${endY}`,
+      midX: (startX + endX) / 2,
+      midY: my,
+      arrowTip: { x: endX, y: endY },
+      isVertical: true,
+    };
+  }
+
+  // Check if target is in a higher row
+  if (fp.y >= tp.y + dimB.height * 0.6) {
+    const startX = acx;
+    const startY = fp.y;
+    const endX = bcx;
+    const endY = tp.y + dimB.height;
+    const my = (startY + endY) / 2;
+    return {
+      startX,
+      startY,
+      endX,
+      endY,
+      path: `M ${startX},${startY} C ${startX},${my} ${endX},${my} ${endX},${endY}`,
+      midX: (startX + endX) / 2,
+      midY: my,
+      arrowTip: { x: endX, y: endY },
+      isVertical: true,
+    };
+  }
+
+  // Same horizontal row
+  if (fp.x <= tp.x) {
+    const startX = fp.x + dimA.width;
+    const startY = acy;
+    const endX = tp.x;
+    const endY = bcy;
+    const mx = (startX + endX) / 2;
+    return {
+      startX,
+      startY,
+      endX,
+      endY,
+      path: `M ${startX},${startY} C ${mx},${startY} ${mx},${endY} ${endX},${endY}`,
+      midX: mx,
+      midY: (startY + endY) / 2,
+      arrowTip: { x: endX, y: endY },
+      isVertical: false,
+    };
+  } else {
+    const startX = fp.x;
+    const startY = acy;
+    const endX = tp.x + dimB.width;
+    const endY = bcy;
+    const mx = (startX + endX) / 2;
+    return {
+      startX,
+      startY,
+      endX,
+      endY,
+      path: `M ${startX},${startY} C ${mx},${startY} ${mx},${endY} ${endX},${endY}`,
+      midX: mx,
+      midY: (startY + endY) / 2,
+      arrowTip: { x: endX, y: endY },
+      isVertical: false,
+    };
+  }
 }
 
 const SOLVER_OPTIONS: { value: ModelType; label: string; desc: string }[] = [
@@ -157,36 +263,46 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
   }, [setup.parameters, setup.segments, setup.timeRange, setup.timeGranularity, egrTarget, workspaceTable, visualTable]);
 
   // Compute clean layout grid positions dynamically based on real items count.
-  // Layout: Quarter (top-left) → params (top row) → segments (middle row) → EGR (bottom centre).
+  // Layout: Quarter + params (top row) → segments (middle row) → EGR (bottom centre).
   const dynamicPositions = React.useMemo(() => {
     const pos: Record<string, { x: number; y: number }> = {};
     const qtr    = dynamicDimensions.find(d => d.id === 'qtr');
     const params  = dynamicDimensions.filter(d => d.id.startsWith('param-'));
     const segs    = dynamicDimensions.filter(d => d.id.startsWith('seg-'));
+    const egr    = dynamicDimensions.find(d => d.id === 'egr');
 
-    const COL_W = 260;
-    const ROW_H = 180;
-    const LEFT  = 40;
-    const ROW1  = 60;   // Quarter + params
-    const ROW2  = ROW1 + ROW_H; // segments
-    const ROW3  = ROW2 + ROW_H; // EGR
+    const CARD_WIDTH = 240;
+    const COL_GAP = 40;
+    const LEFT = 40;
+    const ROW1_Y = 40;
+    const ROW2_Y = 250;
+    const ROW3_Y = 480;
 
-    // Row 1: Quarter at col 0, then params
-    if (qtr) pos[qtr.id] = { x: LEFT, y: ROW1 };
-    params.forEach((p, i) => {
-      pos[p.id] = { x: LEFT + (i + 1) * COL_W, y: ROW1 };
-    });
+    // Row 1: Quarter + params
+    const row1Items = qtr ? [qtr, ...params] : params;
+    // Row 2: Segments (Modifiers)
+    const row2Items = segs;
+    // Row 3: EGR target
+    const row3Items = egr ? [egr] : [];
 
-    // Row 2: Segments spread across the same columns as params (centred under them)
-    const segStartCol = params.length > 0 ? 0 : 0;
-    segs.forEach((s, i) => {
-      pos[s.id] = { x: LEFT + (segStartCol + i) * COL_W, y: ROW2 };
-    });
+    const maxItemsInRow = Math.max(row1Items.length, row2Items.length, row3Items.length, 1);
+    const totalGridWidth = maxItemsInRow * CARD_WIDTH + (maxItemsInRow - 1) * COL_GAP;
 
-    // Row 3: EGR centred under the params/segs cluster
-    const totalCols = Math.max(params.length + 1, segs.length);
-    const egrX = LEFT + Math.floor(totalCols / 2) * COL_W;
-    pos['egr'] = { x: egrX, y: ROW3 };
+    const layoutRow = (items: typeof dynamicDimensions, y: number) => {
+      if (items.length === 0) return;
+      const rowWidth = items.length * CARD_WIDTH + (items.length - 1) * COL_GAP;
+      const startX = LEFT + Math.max(0, (totalGridWidth - rowWidth) / 2);
+      items.forEach((item, idx) => {
+        pos[item.id] = {
+          x: Math.round(startX + idx * (CARD_WIDTH + COL_GAP)),
+          y,
+        };
+      });
+    };
+
+    layoutRow(row1Items, ROW1_Y);
+    layoutRow(row2Items, ROW2_Y);
+    layoutRow(row3Items, ROW3_Y);
 
     return pos;
   }, [dynamicDimensions]);
@@ -397,7 +513,23 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
   // ── Reset connections ──────────────────────────────────────────────────────
   const resetConnections = () => setConnections(dynamicConnections);
 
-  const canvasHeight = Math.max(420, ...Object.values(positions).map(p => p.y + CARD_H + 40));
+  const { canvasWidth, canvasHeight } = React.useMemo(() => {
+    let maxX = 880;
+    let maxY = 760;
+    Object.entries(positions).forEach(([id, p]) => {
+      const dim = getCardDimensions(id, !!activeForecast);
+      if (p.x + dim.width + 60 > maxX) maxX = p.x + dim.width + 60;
+      if (p.y + dim.height + 60 > maxY) maxY = p.y + dim.height + 60;
+    });
+    return { canvasWidth: maxX, canvasHeight: maxY };
+  }, [positions, activeForecast]);
+
+  const resetLayout = () => {
+    setPositions(dynamicPositions);
+    setConnections(dynamicConnections);
+    setZoom(1);
+  };
+
   const [insightsOpen, setInsightsOpen] = useState(true);
   const currentSolver = SOLVER_OPTIONS.find(s => s.value === model) ?? SOLVER_OPTIONS[0];
   const customCount = connections.filter(c => !c.isDefault).length;
@@ -770,43 +902,44 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
       )}
 
       {/* ── Canvas ───────────────────────────────────────────────── */}
-      <div className="w-full overflow-x-auto no-scrollbar pb-4 relative">
-        {/* Zoom controls */}
-        <div className="absolute bottom-4 left-4 z-30 flex items-center gap-1 bg-white/90 backdrop-blur-md border border-warm-border p-1.5 rounded-xl shadow-md select-none font-sans">
+      <div className="w-full overflow-x-auto no-scrollbar pb-6 relative rounded-2xl border border-warm-border/60 bg-gradient-to-b from-[#FAF9F7]/60 to-[#F5F3EF]/60 shadow-inner">
+        {/* Zoom controls & Reset Layout */}
+        <div className="absolute top-4 right-4 z-30 flex items-center gap-1.5 bg-white/95 backdrop-blur-md border border-warm-border p-1.5 rounded-xl shadow-md select-none font-sans">
           <button
             type="button"
-            onClick={() => setZoom(z => Math.max(0.5, z - 0.1))}
-            className="h-6 w-6 rounded bg-secondary hover:bg-muted text-warm-text font-bold text-[13px] flex items-center justify-center cursor-pointer transition-colors"
+            onClick={() => setZoom(z => Math.max(0.5, Number((z - 0.1).toFixed(1))))}
+            className="h-6 w-6 rounded-lg bg-secondary hover:bg-muted text-warm-text font-bold text-[13px] flex items-center justify-center cursor-pointer transition-colors"
             title="Zoom Out"
           >
             -
           </button>
-          <span className="text-[10px] font-mono font-bold text-warm-muted px-1 min-w-[36px] text-center">
+          <span className="text-[10.5px] font-mono font-bold text-warm-muted px-1.5 min-w-[38px] text-center">
             {Math.round(zoom * 100)}%
           </span>
           <button
             type="button"
-            onClick={() => setZoom(z => Math.min(1.5, z + 0.1))}
-            className="h-6 w-6 rounded bg-secondary hover:bg-muted text-warm-text font-bold text-[13px] flex items-center justify-center cursor-pointer transition-colors"
+            onClick={() => setZoom(z => Math.min(1.5, Number((z + 0.1).toFixed(1))))}
+            className="h-6 w-6 rounded-lg bg-secondary hover:bg-muted text-warm-text font-bold text-[13px] flex items-center justify-center cursor-pointer transition-colors"
             title="Zoom In"
           >
             +
           </button>
           <button
             type="button"
-            onClick={() => setZoom(1)}
-            className="ml-1 px-1.5 py-0.5 rounded bg-brand-indigo/10 hover:bg-brand-indigo/15 text-brand-indigo font-bold text-[9px] uppercase cursor-pointer transition-colors"
-            title="Reset Zoom"
+            onClick={resetLayout}
+            className="ml-1 px-2 py-1 rounded-lg bg-brand-indigo/10 hover:bg-brand-indigo/15 text-brand-indigo font-bold text-[9.5px] uppercase cursor-pointer transition-colors flex items-center gap-1"
+            title="Reset Zoom & Layout"
           >
-            Reset
+            <RefreshCw className="h-2.5 w-2.5" />
+            <span>Reset View</span>
           </button>
         </div>
  
         <div
           ref={canvasRef}
           onMouseMove={updateMouse}
-          className="relative min-w-[760px] origin-top-left transition-transform duration-100"
-          style={{ height: canvasHeight, transform: `scale(${zoom})` }}
+          className="relative min-w-[880px] origin-top-left transition-transform duration-100"
+          style={{ width: canvasWidth, height: canvasHeight, transform: `scale(${zoom})`, transformOrigin: 'top left' }}
         >
         {/* SVG — connections layer. Pointer events enabled per-element. */}
         <svg
@@ -816,7 +949,8 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
         >
           {/* All connections */}
           {connections.map((conn) => {
-            const fp = positions[conn.from], tp = positions[conn.to];
+            const fp = positions[conn.from] || dynamicPositions[conn.from];
+            const tp = positions[conn.to] || dynamicPositions[conn.to];
             if (!fp || !tp) return null;
             const isHighlighted = conn.from === selectedId || conn.to === selectedId;
             const isHovered     = hoveredConn === conn.id;
@@ -828,9 +962,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
             const lineDash   = isContrib ? undefined : (conn.dashed ? '5 4' : undefined);
             const lineOpacity = isHovered ? 1 : isContrib ? 0.85 : (isHighlighted ? 1 : 0.6);
 
-            // Midpoint for contribution label
-            const midX = (fp.x + CARD_W + tp.x) / 2;
-            const midY = (fp.y + CARD_H / 2 + tp.y + CARD_H / 2) / 2;
+            const geom = getConnectionGeom(conn.from, conn.to, fp, tp, !!activeForecast);
 
             return (
               <g
@@ -841,10 +973,10 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
                 onMouseLeave={() => setHoveredConn(null)}
               >
                 {/* Wide invisible hit area */}
-                <path d={computePath(fp, tp)} stroke="transparent" strokeWidth="16" fill="none" />
+                <path d={geom.path} stroke="transparent" strokeWidth="16" fill="none" />
                 {/* Visible line */}
                 <path
-                  d={computePath(fp, tp)}
+                  d={geom.path}
                   stroke={lineColor}
                   strokeWidth={lineWeight}
                   strokeOpacity={lineOpacity}
@@ -854,47 +986,74 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
                   style={{ transition: 'stroke 0.15s, stroke-opacity 0.15s' }}
                 />
                 {/* Arrowhead on EGR-bound lines in Flow C */}
-                {isContrib && (() => {
-                  // Approximate arrow tip at target card left edge
-                  const ax = tp.x, ay = tp.y + CARD_H / 2;
-                  return (
-                    <polygon
-                      points={`${ax},${ay} ${ax - 8},${ay - 4} ${ax - 8},${ay + 4}`}
-                      fill={lineColor} fillOpacity={lineOpacity}
-                      style={{ pointerEvents: 'none' }}
-                    />
-                  );
-                })()}
+                {isContrib && (
+                  <polygon
+                    points={
+                      geom.isVertical
+                        ? `${geom.endX},${geom.endY} ${geom.endX - 5},${geom.endY - 8} ${geom.endX + 5},${geom.endY - 8}`
+                        : `${geom.endX},${geom.endY} ${geom.endX - 8},${geom.endY - 5} ${geom.endX - 8},${geom.endY + 5}`
+                    }
+                    fill={lineColor}
+                    fillOpacity={lineOpacity}
+                    style={{ pointerEvents: 'none' }}
+                  />
+                )}
                 {/* "contributes" pill label on EGR-bound lines */}
                 {isContrib && !isHovered && (
                   <g style={{ pointerEvents: 'none' }}>
-                    <rect x={midX - 24} y={midY - 8} width={48} height={16} rx={8}
-                      fill="#6E69BE" fillOpacity={0.12} />
-                    <text x={midX} y={midY + 4} textAnchor="middle"
-                      fontSize="8" fontWeight="700" fill="#6E69BE" fillOpacity={0.9}
-                      style={{ userSelect: 'none', fontFamily: 'monospace' }}>
+                    <rect
+                      x={geom.midX - 24}
+                      y={geom.midY - 8}
+                      width={48}
+                      height={16}
+                      rx={8}
+                      fill="#6E69BE"
+                      fillOpacity={0.12}
+                    />
+                    <text
+                      x={geom.midX}
+                      y={geom.midY + 4}
+                      textAnchor="middle"
+                      fontSize="8"
+                      fontWeight="700"
+                      fill="#6E69BE"
+                      fillOpacity={0.9}
+                      style={{ userSelect: 'none', fontFamily: 'monospace' }}
+                    >
                       drives →
                     </text>
                   </g>
                 )}
                 {/* Origin dot */}
-                <circle cx={fp.x + CARD_W} cy={fp.y + CARD_H / 2}
+                <circle
+                  cx={geom.startX}
+                  cy={geom.startY}
                   r={isHovered ? 5 : (isContrib || isHighlighted) ? 4 : 3}
                   fill={isHovered ? '#EF4444' : lineColor}
                   fillOpacity={lineOpacity}
-                  style={{ transition: 'fill 0.15s, r 0.15s' }} />
+                  style={{ transition: 'fill 0.15s, r 0.15s' }}
+                />
                 {/* Target dot */}
-                <circle cx={tp.x} cy={tp.y + CARD_H / 2}
+                <circle
+                  cx={geom.endX}
+                  cy={geom.endY}
                   r={isHovered ? 5 : (isContrib || isHighlighted) ? 4 : 3}
-                  fill="white" stroke={isHovered ? '#EF4444' : lineColor}
-                  strokeWidth={isContrib ? 2.5 : 1.8} strokeOpacity={lineOpacity}
-                  style={{ transition: 'stroke 0.15s' }} />
+                  fill="white"
+                  stroke={isHovered ? '#EF4444' : lineColor}
+                  strokeWidth={isContrib ? 2.5 : 1.8}
+                  strokeOpacity={lineOpacity}
+                  style={{ transition: 'stroke 0.15s' }}
+                />
                 {/* Hover tooltip: ✕ */}
                 {isHovered && (
                   <text
-                    x={midX} y={midY - 8}
-                    textAnchor="middle" fontSize="10" fontWeight="bold"
-                    fill="#EF4444" style={{ pointerEvents: 'none', userSelect: 'none' }}
+                    x={geom.midX}
+                    y={geom.midY - 8}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fontWeight="bold"
+                    fill="#EF4444"
+                    style={{ pointerEvents: 'none', userSelect: 'none' }}
                   >
                     ✕ delink
                   </text>
@@ -904,24 +1063,40 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
           })}
 
           {/* Rubber-band preview line when linking */}
-          {linkSource && positions[linkSource] && (
-            <g style={{ pointerEvents: 'none' }}>
-              <line
-                x1={positions[linkSource].x + CARD_W / 2}
-                y1={positions[linkSource].y + CARD_H / 2}
-                x2={mousePos.x} y2={mousePos.y}
-                stroke="#FF5A1F" strokeWidth="2" strokeDasharray="6 4"
-                className="animate-marching-ants"
-              />
-              <circle cx={mousePos.x} cy={mousePos.y} r="5"
-                fill="#FFF2EE" stroke="#FF5A1F" strokeWidth="2" />
-            </g>
-          )}
+          {linkSource && positions[linkSource] && (() => {
+            const dim = getCardDimensions(linkSource, !!activeForecast);
+            const srcCenter = {
+              x: positions[linkSource].x + dim.width / 2,
+              y: positions[linkSource].y + dim.height / 2,
+            };
+            return (
+              <g style={{ pointerEvents: 'none' }}>
+                <line
+                  x1={srcCenter.x}
+                  y1={srcCenter.y}
+                  x2={mousePos.x}
+                  y2={mousePos.y}
+                  stroke="#FF5A1F"
+                  strokeWidth="2"
+                  strokeDasharray="6 4"
+                  className="animate-marching-ants"
+                />
+                <circle
+                  cx={mousePos.x}
+                  cy={mousePos.y}
+                  r="5"
+                  fill="#FFF2EE"
+                  stroke="#FF5A1F"
+                  strokeWidth="2"
+                />
+              </g>
+            );
+          })()}
         </svg>
 
         {/* Dimension cards — above SVG */}
         {dynamicDimensions.map((d) => {
-          const pos      = positions[d.id] || { x: 40, y: 80 };
+          const pos      = positions[d.id] || dynamicPositions[d.id] || { x: 40, y: 40 };
           const isPinned = pinnedIds.has(d.id);
           const isSel    = selectedId === d.id;
           const isSource = linkSource === d.id;
@@ -929,7 +1104,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
           const isEdgeHovered = edgeHoverId === d.id;
 
           const isEgrForecast = d.id === 'egr' && !!activeForecast;
-          const cardWidth = isEgrForecast ? CARD_W + 36 : CARD_W;
+          const cardDim = getCardDimensions(d.id, isEgrForecast);
 
           return (
             <div
@@ -937,7 +1112,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
               onMouseDown={e => handleCardMouseDown(e, d.id)}
               onMouseMove={e => handleCardMouseMove(e, d.id)}
               onMouseLeave={() => setEdgeHoverId(null)}
-              className={`absolute border rounded-2xl overflow-hidden flex flex-col transition-all duration-150 select-none z-20 ${
+              className={`absolute border rounded-2xl overflow-hidden flex flex-col transition-shadow duration-150 select-none z-20 ${
                 drag?.id === d.id   ? 'cursor-grabbing shadow-xl z-30' :
                 isEdgeHovered       ? 'cursor-crosshair' : 'cursor-grab'
               } ${
@@ -948,7 +1123,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
                 isEdgeHovered ? 'bg-white border-[#FF5A1F]/60 ring-2 ring-[#FF5A1F]/20 shadow-md' :
                                 'bg-white border-warm-border hover:shadow-md shadow-card'
               }`}
-              style={{ left: pos.x, top: pos.y, width: cardWidth }}
+              style={{ left: pos.x, top: pos.y, width: cardDim.width }}
             >
               <div className={`p-3.5 pb-2 flex flex-col gap-1 font-sans ${isEgrForecast ? 'bg-[#FFF2EE]/50 border-b border-[#FFD4C5]' : ''}`}>
                 <div className="flex justify-between items-center">

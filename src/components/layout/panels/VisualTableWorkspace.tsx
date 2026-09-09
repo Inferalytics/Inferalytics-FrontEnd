@@ -675,6 +675,8 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
             </div>
           )}
 
+          {batchModels.length > 0 && <WorldModelCompareView worldModels={batchModels} />}
+
           {workspaceTable && workspaceTable.columns?.some(c => c.id.startsWith('scenario') || c.id.startsWith('forecast')) && (
             <div className="bg-white rounded-2xl border border-warm-border shadow-card overflow-hidden shrink-0">
               <div className="px-4 py-3 border-b border-warm-border/60">
@@ -714,8 +716,6 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
               </div>
             </div>
           )}
-
-          {batchModels.length > 0 && <WorldModelCompareView worldModels={batchModels} />}
         </div>
       ) : tableWorkspaceViewMode === 'world_model' ? (
         <div className="flex-1 min-h-0 overflow-auto custom-scrollbar w-full p-4 flex flex-col gap-4">

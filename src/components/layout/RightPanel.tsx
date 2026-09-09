@@ -16,23 +16,40 @@ const renderFormattedText = (content: string | undefined | null, isUser = false)
     const boldParts = text.split(/\*\*(.*?)\*\*/g);
     return boldParts.map((bPart, bIdx) => {
       if (bIdx % 2 === 1) {
-        return <strong key={`b-${bIdx}`} className={`font-bold ${isUser ? 'text-brand-indigo font-bold' : 'text-warm-text'}`}>{bPart}</strong>;
+        return (
+          <strong
+            key={`b-${bIdx}`}
+            className={`font-bold ${isUser ? 'text-brand-indigo font-bold' : 'text-warm-text'}`}
+          >
+            {bPart}
+          </strong>
+        );
       }
 
-      const codeParts = bPart.split(/`(.*?)`/g);
+      const codeParts = bPart.split(/`([^`]+)`/g);
       return codeParts.map((cPart, cIdx) => {
         if (cIdx % 2 === 1) {
           return (
-            <code key={`c-${cIdx}`} className="px-1.5 py-0.5 mx-0.5 rounded bg-warm-bg border border-warm-border text-[11px] font-mono text-brand-indigo font-semibold">
+            <code
+              key={`c-${cIdx}`}
+              className="px-1.5 py-0.5 mx-0.5 rounded bg-warm-bg border border-warm-border text-[11px] font-mono text-brand-indigo font-semibold"
+            >
               {cPart}
             </code>
           );
         }
 
-        const italicParts = cPart.split(/\*(.*?)\*/g);
+        const italicParts = cPart.split(/\*([^*]+)\*/g);
         return italicParts.map((iPart, iIdx) => {
           if (iIdx % 2 === 1) {
-            return <em key={`i-${iIdx}`} className={`italic ${isUser ? 'text-brand-indigo/90' : 'text-warm-text/90'}`}>{iPart}</em>;
+            return (
+              <em
+                key={`i-${iIdx}`}
+                className={`italic ${isUser ? 'text-brand-indigo/90' : 'text-warm-text/90'}`}
+              >
+                {iPart}
+              </em>
+            );
           }
           return iPart;
         });
@@ -40,21 +57,68 @@ const renderFormattedText = (content: string | undefined | null, isUser = false)
     });
   };
 
-  const blocks: Array<
+  type Block =
+    | { type: 'code'; language?: string; text: string }
     | { type: 'table'; headers: string[]; rows: string[][] }
     | { type: 'h1'; text: string }
     | { type: 'h2'; text: string }
     | { type: 'h3'; text: string }
+    | { type: 'section-header'; text: string }
     | { type: 'hr' }
     | { type: 'bullet'; text: string }
     | { type: 'paragraph'; text: string }
-    | { type: 'spacer' }
-  > = [];
+    | { type: 'spacer' };
+
+  const blocks: Block[] = [];
+
+  const isAsciiBoxLine = (line: string) => {
+    const t = line.trim();
+    if (!t) return false;
+    // Box drawing unicode
+    if (/[┌└├│─┼┬┴┐┘═║╔╗╚╝╠╣╦╩╬]/.test(t)) return true;
+    // Box borders like +---+ or |---| or +===+ or |===|
+    if (/^[+|][-=_+]{3,}[+|]?$/.test(t)) return true;
+    // Arrow lines like ↓, -->, ==>
+    if (/^\s*[|]?\s*(?:[↓⬇→←↑▲▼]|-->|==>|v|\|\s*v\s*\|)\s*[|]?\s*$/.test(t)) return true;
+    // Pipe enclosed content or ASCII box rows
+    if (
+      t.startsWith('|') &&
+      (t.endsWith('|') ||
+        t.includes('| •') ||
+        t.includes('| -') ||
+        t.includes('INPUT:') ||
+        t.includes('VECTORISATION') ||
+        t.includes('STRATEGY') ||
+        t.includes('OUTPUT:') ||
+        t.includes('Baseline Total:') ||
+        t.includes('Flatten hierarchical') ||
+        t.includes('Identify bottom'))
+    ) {
+      return true;
+    }
+    return false;
+  };
 
   let i = 0;
   while (i < rawLines.length) {
-    const trimmed = rawLines[i].trim();
+    const raw = rawLines[i];
+    const trimmed = raw.trim();
 
+    // 1. Fenced code block ```
+    if (trimmed.startsWith('```')) {
+      const language = trimmed.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < rawLines.length && !rawLines[i].trim().startsWith('```')) {
+        codeLines.push(rawLines[i]);
+        i++;
+      }
+      if (i < rawLines.length) i++; // skip closing ```
+      blocks.push({ type: 'code', language: language || 'text', text: codeLines.join('\n') });
+      continue;
+    }
+
+    // 2. Markdown table
     if (trimmed.startsWith('|') && trimmed.endsWith('|') && i + 1 < rawLines.length) {
       const nextTrimmed = rawLines[i + 1].trim();
       if (nextTrimmed.startsWith('|') && nextTrimmed.includes('---')) {
@@ -62,11 +126,15 @@ const renderFormattedText = (content: string | undefined | null, isUser = false)
           .split('|')
           .slice(1, -1)
           .map(c => c.trim());
-        
+
         const tableRows: string[][] = [];
         i += 2;
 
-        while (i < rawLines.length && rawLines[i].trim().startsWith('|') && rawLines[i].trim().endsWith('|')) {
+        while (
+          i < rawLines.length &&
+          rawLines[i].trim().startsWith('|') &&
+          rawLines[i].trim().endsWith('|')
+        ) {
           const rowCells = rawLines[i]
             .trim()
             .split('|')
@@ -81,7 +149,27 @@ const renderFormattedText = (content: string | undefined | null, isUser = false)
       }
     }
 
-    if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+    // 3. Unfenced ASCII diagram / pipeline box block
+    if (isAsciiBoxLine(raw)) {
+      const diagramLines: string[] = [];
+      while (
+        i < rawLines.length &&
+        (isAsciiBoxLine(rawLines[i]) ||
+          (!rawLines[i].trim() && i + 1 < rawLines.length && isAsciiBoxLine(rawLines[i + 1])))
+      ) {
+        diagramLines.push(rawLines[i]);
+        i++;
+      }
+      if (diagramLines.length > 0) {
+        blocks.push({ type: 'code', language: 'diagram', text: diagramLines.join('\n') });
+        continue;
+      }
+    }
+
+    // 4. Section headers like "6. FULL WORLD MODEL SUMMARY" or "### Header"
+    if (/^\d+\.\s+[A-Z0-9\s—–:-]{3,}$/.test(trimmed)) {
+      blocks.push({ type: 'section-header', text: trimmed });
+    } else if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
       blocks.push({ type: 'hr' });
     } else if (trimmed.startsWith('# ')) {
       blocks.push({ type: 'h1', text: trimmed.slice(2) });
@@ -89,7 +177,7 @@ const renderFormattedText = (content: string | undefined | null, isUser = false)
       blocks.push({ type: 'h2', text: trimmed.slice(3) });
     } else if (trimmed.startsWith('### ')) {
       blocks.push({ type: 'h3', text: trimmed.slice(4) });
-    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ')) {
       blocks.push({ type: 'bullet', text: trimmed.slice(2) });
     } else if (!trimmed) {
       blocks.push({ type: 'spacer' });
@@ -107,23 +195,67 @@ const renderFormattedText = (content: string | undefined | null, isUser = false)
     if (block.type === 'spacer') {
       return <div key={`sp-${bIdx}`} className="h-1.5" />;
     }
+    if (block.type === 'code') {
+      return (
+        <div
+          key={`code-${bIdx}`}
+          className="my-2.5 rounded-xl border border-warm-border bg-[#FAF9F7] overflow-hidden shadow-2xs select-text"
+        >
+          {block.language && block.language !== 'text' && block.language !== 'diagram' && (
+            <div className="px-3 py-1 bg-warm-bg/70 border-b border-warm-border/50 text-[9.5px] font-mono font-bold text-warm-muted uppercase">
+              {block.language}
+            </div>
+          )}
+          <pre className="p-3 font-mono text-[11px] leading-relaxed text-warm-text overflow-x-auto whitespace-pre font-medium custom-scrollbar">
+            <code>{block.text}</code>
+          </pre>
+        </div>
+      );
+    }
+    if (block.type === 'section-header') {
+      return (
+        <div
+          key={`sh-${bIdx}`}
+          className={`text-[13px] font-bold font-mono uppercase tracking-wide mt-3 mb-1 pt-2 border-t border-warm-border/40 ${
+            isUser ? 'text-brand-indigo' : 'text-warm-text'
+          }`}
+        >
+          {processInline(block.text)}
+        </div>
+      );
+    }
     if (block.type === 'h1') {
       return (
-        <h3 key={`h1-${bIdx}`} className={`text-[13.5px] font-bold mt-2 mb-1 uppercase font-mono ${isUser ? 'text-brand-indigo' : 'text-warm-text'}`}>
+        <h3
+          key={`h1-${bIdx}`}
+          className={`text-[13.5px] font-bold mt-2 mb-1 uppercase font-mono ${
+            isUser ? 'text-brand-indigo' : 'text-warm-text'
+          }`}
+        >
           {processInline(block.text)}
         </h3>
       );
     }
     if (block.type === 'h2') {
       return (
-        <h4 key={`h2-${bIdx}`} className={`text-[13px] font-semibold mt-2 mb-0.5 font-sans ${isUser ? 'text-brand-indigo' : 'text-warm-text'}`}>
+        <h4
+          key={`h2-${bIdx}`}
+          className={`text-[13px] font-semibold mt-2 mb-0.5 font-sans ${
+            isUser ? 'text-brand-indigo' : 'text-warm-text'
+          }`}
+        >
           {processInline(block.text)}
         </h4>
       );
     }
     if (block.type === 'h3') {
       return (
-        <h5 key={`h3-${bIdx}`} className={`text-[12px] font-semibold mt-1.5 mb-0.5 font-sans ${isUser ? 'text-brand-indigo' : 'text-warm-text'}`}>
+        <h5
+          key={`h3-${bIdx}`}
+          className={`text-[12px] font-semibold mt-1.5 mb-0.5 font-sans ${
+            isUser ? 'text-brand-indigo' : 'text-warm-text'
+          }`}
+        >
           {processInline(block.text)}
         </h5>
       );
@@ -132,7 +264,11 @@ const renderFormattedText = (content: string | undefined | null, isUser = false)
       return (
         <div key={`b-${bIdx}`} className="flex items-start gap-2 my-0.5 pl-1">
           <span className="text-brand-indigo font-bold select-none text-[12px] leading-tight">•</span>
-          <div className={`flex-1 text-[12px] leading-relaxed ${isUser ? 'text-brand-indigo/90' : 'text-warm-text/90'}`}>
+          <div
+            className={`flex-1 text-[12px] leading-relaxed ${
+              isUser ? 'text-brand-indigo/90' : 'text-warm-text/90'
+            }`}
+          >
             {processInline(block.text)}
           </div>
         </div>
@@ -140,7 +276,10 @@ const renderFormattedText = (content: string | undefined | null, isUser = false)
     }
     if (block.type === 'table') {
       return (
-        <div key={`tbl-${bIdx}`} className="my-2 overflow-x-auto rounded-xl border border-warm-border bg-white shadow-2xs">
+        <div
+          key={`tbl-${bIdx}`}
+          className="my-2 overflow-x-auto rounded-xl border border-warm-border bg-white shadow-2xs"
+        >
           <table className="w-full text-left border-collapse text-[11px] font-sans">
             <thead>
               <tr className="bg-[#FAF9F7] border-b border-warm-border text-[10px] font-mono uppercase text-warm-text font-bold">
@@ -180,7 +319,10 @@ const renderFormattedText = (content: string | undefined | null, isUser = false)
       );
     }
     return (
-      <div key={`p-${bIdx}`} className={`text-[12px] leading-relaxed ${isUser ? 'text-brand-indigo' : 'text-warm-text'}`}>
+      <div
+        key={`p-${bIdx}`}
+        className={`text-[12px] leading-relaxed ${isUser ? 'text-brand-indigo' : 'text-warm-text'}`}
+      >
         {processInline(block.text)}
       </div>
     );
@@ -517,12 +659,11 @@ export default function RightPanel() {
               ) : (
                 // Normal Speech Bubbles
                 <div
-                  className={`group relative px-4 py-2.5 text-[13px] leading-relaxed shadow-sm border select-text selection:bg-brand-indigo selection:text-white ${
+                  className={`group relative px-4 py-2.5 text-[13px] leading-relaxed shadow-sm border select-text selection:bg-brand-indigo selection:text-white max-w-full overflow-hidden ${
                     isAI
                       ? 'bg-white border-warm-border text-warm-text rounded-2xl rounded-bl-sm'
                       : 'bg-lavender/30 border-lavender/50 text-brand-indigo rounded-2xl rounded-br-sm'
                   }`}
-                  style={{ whiteSpace: 'pre-wrap' }}
                 >
                   {/* Copy Button on Hover */}
                   <button

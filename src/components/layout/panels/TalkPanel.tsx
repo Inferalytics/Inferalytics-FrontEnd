@@ -15,10 +15,17 @@ const renderFormattedText = (content: string, isUser = false) => {
     const boldParts = text.split(/\*\*(.*?)\*\*/g);
     return boldParts.map((bPart, bIdx) => {
       if (bIdx % 2 === 1) {
-        return <strong key={`b-${bIdx}`} className={`font-bold ${isUser ? 'text-white' : 'text-warm-text'}`}>{bPart}</strong>;
+        return (
+          <strong
+            key={`b-${bIdx}`}
+            className={`font-bold ${isUser ? 'text-white' : 'text-warm-text'}`}
+          >
+            {bPart}
+          </strong>
+        );
       }
 
-      const codeParts = bPart.split(/`(.*?)`/g);
+      const codeParts = bPart.split(/`([^`]+)`/g);
       return codeParts.map((cPart, cIdx) => {
         if (cIdx % 2 === 1) {
           return (
@@ -35,10 +42,17 @@ const renderFormattedText = (content: string, isUser = false) => {
           );
         }
 
-        const italicParts = cPart.split(/\*(.*?)\*/g);
+        const italicParts = cPart.split(/\*([^*]+)\*/g);
         return italicParts.map((iPart, iIdx) => {
           if (iIdx % 2 === 1) {
-            return <em key={`i-${iIdx}`} className={`italic ${isUser ? 'text-white/90' : 'text-warm-text/90'}`}>{iPart}</em>;
+            return (
+              <em
+                key={`i-${iIdx}`}
+                className={`italic ${isUser ? 'text-white/90' : 'text-warm-text/90'}`}
+              >
+                {iPart}
+              </em>
+            );
           }
           return iPart;
         });
@@ -46,23 +60,64 @@ const renderFormattedText = (content: string, isUser = false) => {
     });
   };
 
-  // Group lines into blocks (tables vs headers vs dividers vs bullets vs paragraphs)
-  const blocks: Array<
+  type Block =
+    | { type: 'code'; language?: string; text: string }
     | { type: 'table'; headers: string[]; rows: string[][] }
     | { type: 'h1'; text: string }
     | { type: 'h2'; text: string }
     | { type: 'h3'; text: string }
+    | { type: 'section-header'; text: string }
     | { type: 'hr' }
     | { type: 'bullet'; text: string }
     | { type: 'paragraph'; text: string }
-    | { type: 'spacer' }
-  > = [];
+    | { type: 'spacer' };
+
+  const blocks: Block[] = [];
+
+  const isAsciiBoxLine = (line: string) => {
+    const t = line.trim();
+    if (!t) return false;
+    if (/[┌└├│─┼┬┴┐┘═║╔╗╚╝╠╣╦╩╬]/.test(t)) return true;
+    if (/^[+|][-=_+]{3,}[+|]?$/.test(t)) return true;
+    if (/^\s*[|]?\s*(?:[↓⬇→←↑▲▼]|-->|==>|v|\|\s*v\s*\|)\s*[|]?\s*$/.test(t)) return true;
+    if (
+      t.startsWith('|') &&
+      (t.endsWith('|') ||
+        t.includes('| •') ||
+        t.includes('| -') ||
+        t.includes('INPUT:') ||
+        t.includes('VECTORISATION') ||
+        t.includes('STRATEGY') ||
+        t.includes('OUTPUT:') ||
+        t.includes('Baseline Total:') ||
+        t.includes('Flatten hierarchical') ||
+        t.includes('Identify bottom'))
+    ) {
+      return true;
+    }
+    return false;
+  };
 
   let i = 0;
   while (i < rawLines.length) {
-    const trimmed = rawLines[i].trim();
+    const raw = rawLines[i];
+    const trimmed = raw.trim();
 
-    // Check for markdown table start
+    // 1. Fenced code block ```
+    if (trimmed.startsWith('```')) {
+      const language = trimmed.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < rawLines.length && !rawLines[i].trim().startsWith('```')) {
+        codeLines.push(rawLines[i]);
+        i++;
+      }
+      if (i < rawLines.length) i++; // skip closing ```
+      blocks.push({ type: 'code', language: language || 'text', text: codeLines.join('\n') });
+      continue;
+    }
+
+    // 2. Markdown table
     if (trimmed.startsWith('|') && trimmed.endsWith('|') && i + 1 < rawLines.length) {
       const nextTrimmed = rawLines[i + 1].trim();
       if (nextTrimmed.startsWith('|') && nextTrimmed.includes('---')) {
@@ -70,11 +125,15 @@ const renderFormattedText = (content: string, isUser = false) => {
           .split('|')
           .slice(1, -1)
           .map(c => c.trim());
-        
-        const tableRows: string[][] = [];
-        i += 2; // skip header and divider line
 
-        while (i < rawLines.length && rawLines[i].trim().startsWith('|') && rawLines[i].trim().endsWith('|')) {
+        const tableRows: string[][] = [];
+        i += 2;
+
+        while (
+          i < rawLines.length &&
+          rawLines[i].trim().startsWith('|') &&
+          rawLines[i].trim().endsWith('|')
+        ) {
           const rowCells = rawLines[i]
             .trim()
             .split('|')
@@ -89,7 +148,27 @@ const renderFormattedText = (content: string, isUser = false) => {
       }
     }
 
-    if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+    // 3. Unfenced ASCII diagram / pipeline box block
+    if (isAsciiBoxLine(raw)) {
+      const diagramLines: string[] = [];
+      while (
+        i < rawLines.length &&
+        (isAsciiBoxLine(rawLines[i]) ||
+          (!rawLines[i].trim() && i + 1 < rawLines.length && isAsciiBoxLine(rawLines[i + 1])))
+      ) {
+        diagramLines.push(rawLines[i]);
+        i++;
+      }
+      if (diagramLines.length > 0) {
+        blocks.push({ type: 'code', language: 'diagram', text: diagramLines.join('\n') });
+        continue;
+      }
+    }
+
+    // 4. Section headers like "6. FULL WORLD MODEL SUMMARY" or "### Header"
+    if (/^\d+\.\s+[A-Z0-9\s—–:-]{3,}$/.test(trimmed)) {
+      blocks.push({ type: 'section-header', text: trimmed });
+    } else if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
       blocks.push({ type: 'hr' });
     } else if (trimmed.startsWith('# ')) {
       blocks.push({ type: 'h1', text: trimmed.slice(2) });
@@ -97,7 +176,7 @@ const renderFormattedText = (content: string, isUser = false) => {
       blocks.push({ type: 'h2', text: trimmed.slice(3) });
     } else if (trimmed.startsWith('### ')) {
       blocks.push({ type: 'h3', text: trimmed.slice(4) });
-    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ')) {
       blocks.push({ type: 'bullet', text: trimmed.slice(2) });
     } else if (!trimmed) {
       blocks.push({ type: 'spacer' });
@@ -110,10 +189,54 @@ const renderFormattedText = (content: string, isUser = false) => {
 
   return blocks.map((block, bIdx) => {
     if (block.type === 'hr') {
-      return <hr key={`hr-${bIdx}`} className={`my-3 ${isUser ? 'border-white/20' : 'border-warm-border/60'}`} />;
+      return (
+        <hr
+          key={`hr-${bIdx}`}
+          className={`my-3 ${isUser ? 'border-white/20' : 'border-warm-border/60'}`}
+        />
+      );
     }
     if (block.type === 'spacer') {
       return <div key={`sp-${bIdx}`} className="h-1.5" />;
+    }
+    if (block.type === 'code') {
+      return (
+        <div
+          key={`code-${bIdx}`}
+          className={`my-2.5 rounded-xl border overflow-hidden shadow-2xs select-text ${
+            isUser ? 'border-white/20 bg-white/10' : 'border-warm-border bg-[#FAF9F7]'
+          }`}
+        >
+          {block.language && block.language !== 'text' && block.language !== 'diagram' && (
+            <div
+              className={`px-3 py-1 border-b text-[9.5px] font-mono font-bold uppercase ${
+                isUser ? 'bg-white/10 border-white/20 text-white/80' : 'bg-warm-bg/70 border-warm-border/50 text-warm-muted'
+              }`}
+            >
+              {block.language}
+            </div>
+          )}
+          <pre
+            className={`p-3 font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre font-medium custom-scrollbar ${
+              isUser ? 'text-white' : 'text-warm-text'
+            }`}
+          >
+            <code>{block.text}</code>
+          </pre>
+        </div>
+      );
+    }
+    if (block.type === 'section-header') {
+      return (
+        <div
+          key={`sh-${bIdx}`}
+          className={`text-[13px] font-bold font-mono uppercase tracking-wide mt-3 mb-1 pt-2 border-t ${
+            isUser ? 'text-white border-white/20' : 'text-warm-text border-warm-border/40'
+          }`}
+        >
+          {processInline(block.text)}
+        </div>
+      );
     }
     if (block.type === 'h1') {
       const isResults = block.text.includes('RESULTS');

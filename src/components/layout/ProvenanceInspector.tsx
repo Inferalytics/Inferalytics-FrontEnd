@@ -15,7 +15,7 @@ const renderFormattedText = (content: string) => {
         return <strong key={`b-${bIdx}`} className="font-bold text-warm-text">{bPart}</strong>;
       }
 
-      const codeParts = bPart.split(/`(.*?)`/g);
+      const codeParts = bPart.split(/`([^`]+)`/g);
       return codeParts.map((cPart, cIdx) => {
         if (cIdx % 2 === 1) {
           return (
@@ -29,18 +29,62 @@ const renderFormattedText = (content: string) => {
     });
   };
 
-  const blocks: Array<
+  type Block =
+    | { type: 'code'; language?: string; text: string }
     | { type: 'table'; headers: string[]; rows: string[][] }
     | { type: 'h1'; text: string }
+    | { type: 'section-header'; text: string }
+    | { type: 'hr' }
     | { type: 'bullet'; text: string }
     | { type: 'paragraph'; text: string }
-    | { type: 'spacer' }
-  > = [];
+    | { type: 'spacer' };
+
+  const blocks: Block[] = [];
+
+  const isAsciiBoxLine = (line: string) => {
+    const t = line.trim();
+    if (!t) return false;
+    if (/[┌└├│─┼┬┴┐┘═║╔╗╚╝╠╣╦╩╬]/.test(t)) return true;
+    if (/^[+|][-=_+]{3,}[+|]?$/.test(t)) return true;
+    if (/^\s*[|]?\s*(?:[↓⬇→←↑▲▼]|-->|==>|v|\|\s*v\s*\|)\s*[|]?\s*$/.test(t)) return true;
+    if (
+      t.startsWith('|') &&
+      (t.endsWith('|') ||
+        t.includes('| •') ||
+        t.includes('| -') ||
+        t.includes('INPUT:') ||
+        t.includes('VECTORISATION') ||
+        t.includes('STRATEGY') ||
+        t.includes('OUTPUT:') ||
+        t.includes('Baseline Total:') ||
+        t.includes('Flatten hierarchical') ||
+        t.includes('Identify bottom'))
+    ) {
+      return true;
+    }
+    return false;
+  };
 
   let i = 0;
   while (i < rawLines.length) {
-    const trimmed = rawLines[i].trim();
+    const raw = rawLines[i];
+    const trimmed = raw.trim();
 
+    // 1. Fenced code block ```
+    if (trimmed.startsWith('```')) {
+      const language = trimmed.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < rawLines.length && !rawLines[i].trim().startsWith('```')) {
+        codeLines.push(rawLines[i]);
+        i++;
+      }
+      if (i < rawLines.length) i++; // skip closing ```
+      blocks.push({ type: 'code', language: language || 'text', text: codeLines.join('\n') });
+      continue;
+    }
+
+    // 2. Markdown table
     if (trimmed.startsWith('|') && trimmed.endsWith('|') && i + 1 < rawLines.length) {
       const nextTrimmed = rawLines[i + 1].trim();
       if (nextTrimmed.startsWith('|') && nextTrimmed.includes('---')) {
@@ -56,9 +100,31 @@ const renderFormattedText = (content: string) => {
       }
     }
 
-    if (trimmed.startsWith('# ') || trimmed.startsWith('## ')) {
+    // 3. Unfenced ASCII diagram / pipeline box block
+    if (isAsciiBoxLine(raw)) {
+      const diagramLines: string[] = [];
+      while (
+        i < rawLines.length &&
+        (isAsciiBoxLine(rawLines[i]) ||
+          (!rawLines[i].trim() && i + 1 < rawLines.length && isAsciiBoxLine(rawLines[i + 1])))
+      ) {
+        diagramLines.push(rawLines[i]);
+        i++;
+      }
+      if (diagramLines.length > 0) {
+        blocks.push({ type: 'code', language: 'diagram', text: diagramLines.join('\n') });
+        continue;
+      }
+    }
+
+    // 4. Section headers like "6. FULL WORLD MODEL SUMMARY" or "### Header"
+    if (/^\d+\.\s+[A-Z0-9\s—–:-]{3,}$/.test(trimmed)) {
+      blocks.push({ type: 'section-header', text: trimmed });
+    } else if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+      blocks.push({ type: 'hr' });
+    } else if (trimmed.startsWith('# ') || trimmed.startsWith('## ')) {
       blocks.push({ type: 'h1', text: trimmed.replace(/^#+\s*/, '') });
-    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ')) {
       blocks.push({ type: 'bullet', text: trimmed.slice(2) });
     } else if (!trimmed) {
       blocks.push({ type: 'spacer' });
@@ -69,7 +135,29 @@ const renderFormattedText = (content: string) => {
   }
 
   return blocks.map((block, bIdx) => {
+    if (block.type === 'hr') return <hr key={`hr-${bIdx}`} className="my-2.5 border-warm-border/60" />;
     if (block.type === 'spacer') return <div key={`sp-${bIdx}`} className="h-1" />;
+    if (block.type === 'code') {
+      return (
+        <div key={`code-${bIdx}`} className="my-2 rounded-xl border border-warm-border bg-[#FAF9F7] overflow-hidden shadow-2xs select-text">
+          {block.language && block.language !== 'text' && block.language !== 'diagram' && (
+            <div className="px-3 py-1 bg-warm-bg/70 border-b border-warm-border/50 text-[9.5px] font-mono font-bold text-warm-muted uppercase">
+              {block.language}
+            </div>
+          )}
+          <pre className="p-2.5 font-mono text-[10.5px] leading-relaxed text-warm-text overflow-x-auto whitespace-pre font-medium custom-scrollbar">
+            <code>{block.text}</code>
+          </pre>
+        </div>
+      );
+    }
+    if (block.type === 'section-header') {
+      return (
+        <div key={`sh-${bIdx}`} className="text-[12px] font-bold text-warm-text font-mono uppercase tracking-wide mt-2.5 mb-1 pt-1.5 border-t border-warm-border/40">
+          {processInline(block.text)}
+        </div>
+      );
+    }
     if (block.type === 'h1') return <h4 key={`h1-${bIdx}`} className="text-[13px] font-bold text-warm-text mt-2 mb-1">{processInline(block.text)}</h4>;
     if (block.type === 'bullet') {
       return (

@@ -33,7 +33,8 @@ export default function LeftPanel() {
     try {
       setIsCreatingBatch(true);
       if (createBatchApi) {
-        await createBatchApi(batchName);
+        const newId = await createBatchApi(batchName);
+        navigate(`/dashboard/conversation?batch=${newId}`);
       }
     } catch (err) {
       console.error('Failed to create batch:', err);
@@ -60,7 +61,10 @@ export default function LeftPanel() {
               return (
                 <button
                   key={b.id}
-                  onClick={() => setActiveBatch(b.id)}
+                  onClick={() => {
+                    setActiveBatch(b.id);
+                    navigate(`/dashboard/conversation?batch=${b.id}`);
+                  }}
                   className={`w-full text-left px-3 py-2 rounded-xl text-[12px] flex items-center justify-between transition-all duration-200 border cursor-pointer ${
                     isActive
                       ? 'bg-lavender/10 border-lavender text-brand-indigo font-semibold shadow-sm'

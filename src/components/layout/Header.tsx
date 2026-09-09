@@ -175,8 +175,9 @@ export default function Header() {
                   onClick={async () => {
                     const name = window.prompt('Enter new workspace name:', `Workspace ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
                     if (name && createBatchApi) {
-                      await createBatchApi(name);
+                      const newId = await createBatchApi(name);
                       setIsBatchOpen(false);
+                      navigate(`/dashboard/conversation?batch=${newId}`);
                     }
                   }}
                   className="flex items-center gap-1 text-[10.5px] font-bold text-[#FF5A1F] hover:underline cursor-pointer lowercase"
@@ -206,6 +207,7 @@ export default function Header() {
                             setActiveBatch(b.id);
                           }
                           setIsBatchOpen(false);
+                          navigate(`/dashboard/conversation?batch=${b.id}`);
                         }}
                         className="flex items-center gap-2 text-left truncate flex-1 cursor-pointer"
                       >

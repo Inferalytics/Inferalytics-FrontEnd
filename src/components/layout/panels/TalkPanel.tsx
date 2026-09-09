@@ -690,6 +690,12 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
         }
         if (res?.workspace_table && res.workspace_table.columns && res.workspace_table.columns.length > 0) {
           setWorkspaceTable(res.workspace_table);
+          // A pure synthesis reply (e.g. "finalize your recommendation") can
+          // return tools_used: [] and world_model: null, but still carry a
+          // merged scenario/forecast matrix worth surfacing on its own.
+          if (res.workspace_table.columns.some(c => c.id.startsWith('scenario') || c.id.startsWith('forecast'))) {
+            hasComparison = true;
+          }
         }
         if (res?.forecast?.comparison) {
           setScenarioCompare(res.forecast.comparison);

@@ -155,9 +155,14 @@ export default function WorldModelCompareView({ worldModels }: Props) {
     },
     {
       metric: 'Speed',
+      // Scored against each scenario's own iteration ceiling rather than the
+      // other scenarios in this comparison — comparing scenarios that both
+      // converge in a similar number of iterations (e.g. 690 vs 694) against
+      // each other collapsed this axis to near-zero for both, since the
+      // ceiling itself was one of the two near-identical values.
       ...Object.fromEntries(sorted.map((wm, i) => {
-        const maxIter = Math.max(...sorted.map(w => w.optimization_result.iterations));
-        const score   = ((maxIter - wm.optimization_result.iterations) / (maxIter || 1)) * 100;
+        const maxIter = wm.optimization_params?.max_iterations || 1000;
+        const score   = Math.max(0, Math.min(100, ((maxIter - wm.optimization_result.iterations) / maxIter) * 100));
         return [`S${wm.scenario_number}`, parseFloat(score.toFixed(1))];
       })),
     },
@@ -170,9 +175,14 @@ export default function WorldModelCompareView({ worldModels }: Props) {
     },
     {
       metric: 'Precision',
+      // Scored against each scenario's own convergence tolerance — the prior
+      // formula multiplied the raw error by a fixed 10000, which maps a
+      // typical near-tolerance error (~1e-4) to ~0 regardless of how good
+      // the convergence actually was relative to what was asked for.
       ...Object.fromEntries(sorted.map((wm, i) => {
-        const err   = wm.optimization_result.convergence_error ?? 1;
-        const score = Math.max(0, Math.min(100, (1 - err * 10000) * 100));
+        const err       = wm.optimization_result.convergence_error ?? 1;
+        const tolerance = wm.optimization_params?.tolerance || 0.0001;
+        const score     = Math.max(0, Math.min(100, (1 - err / tolerance) * 100));
         return [`S${wm.scenario_number}`, parseFloat(score.toFixed(1))];
       })),
     },

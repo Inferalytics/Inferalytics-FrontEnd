@@ -21,6 +21,7 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
     activeBatchId,
     worldModels,
     scenarioCompare,
+    workspaceTable,
     optimisationResult,
     egrTarget,
     tableWorkspaceViewMode,
@@ -671,6 +672,46 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
                   {scenarioCompare.recommendation}
                 </div>
               )}
+            </div>
+          )}
+
+          {workspaceTable && workspaceTable.columns?.some(c => c.id.startsWith('scenario') || c.id.startsWith('forecast')) && (
+            <div className="bg-white rounded-2xl border border-warm-border shadow-card overflow-hidden shrink-0">
+              <div className="px-4 py-3 border-b border-warm-border/60">
+                <span className="text-[12.5px] font-bold text-warm-text">Full Scenario &amp; Forecast Matrix</span>
+              </div>
+              <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-warm-border/50 bg-warm-bg/40">
+                      {workspaceTable.columns.map(col => (
+                        <th key={col.id} className="px-4 py-2 text-[10px] font-bold text-warm-muted uppercase tracking-wide whitespace-nowrap">
+                          {col.name}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workspaceTable.rows.map(row => (
+                      <tr key={row.id} className="border-b border-warm-border/30">
+                        {workspaceTable.columns.map(col => {
+                          const val = row[col.id];
+                          const display = val === undefined || val === null
+                            ? '—'
+                            : typeof val === 'number'
+                              ? val.toLocaleString(undefined, { maximumFractionDigits: 4 })
+                              : String(val);
+                          return (
+                            <td key={col.id} className="px-4 py-2 text-[11.5px] font-mono text-warm-text whitespace-nowrap">
+                              {display}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 

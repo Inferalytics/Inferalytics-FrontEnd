@@ -8,76 +8,180 @@ import api from '../../api';
 import { getRouteForTools, detectFlow, shouldRefreshForecast, isFullScenarioRequest, hasExplicitPipelineParams, buildFullScenarioPrompt } from '../../lib/agentNavigation';
 import { setForecastPageCache } from '../../store/useStore';
 
-const renderFormattedText = (content: string | undefined | null) => {
+const renderFormattedText = (content: string | undefined | null, isUser = false) => {
   if (!content) return null;
+  const rawLines = content.split('\n');
 
-  // Split by line blocks to preserve markdown bullet lists and paragraphs cleanly
-  const lines = content.split('\n');
+  const processInline = (text: string) => {
+    const boldParts = text.split(/\*\*(.*?)\*\*/g);
+    return boldParts.map((bPart, bIdx) => {
+      if (bIdx % 2 === 1) {
+        return <strong key={`b-${bIdx}`} className={`font-bold ${isUser ? 'text-brand-indigo font-bold' : 'text-warm-text'}`}>{bPart}</strong>;
+      }
 
-  return lines.map((line, lIdx) => {
-    // Process line level formatting: bold, italic, code backticks
-    const processInline = (text: string) => {
-      // Split by bold (**text**)
-      const boldParts = text.split(/\*\*(.*?)\*\*/g);
-      return boldParts.map((bPart, bIdx) => {
-        if (bIdx % 2 === 1) {
-          return <strong key={`b-${bIdx}`} className="font-bold text-warm-text">{bPart}</strong>;
+      const codeParts = bPart.split(/`(.*?)`/g);
+      return codeParts.map((cPart, cIdx) => {
+        if (cIdx % 2 === 1) {
+          return (
+            <code key={`c-${cIdx}`} className="px-1.5 py-0.5 mx-0.5 rounded bg-warm-bg border border-warm-border text-[11px] font-mono text-brand-indigo font-semibold">
+              {cPart}
+            </code>
+          );
         }
 
-        // Split by inline code (`code`)
-        const codeParts = bPart.split(/`(.*?)`/g);
-        return codeParts.map((cPart, cIdx) => {
-          if (cIdx % 2 === 1) {
-            return (
-              <code key={`c-${cIdx}`} className="px-1.5 py-0.5 mx-0.5 rounded bg-warm-bg border border-warm-border text-[11px] font-mono text-brand-indigo font-semibold">
-                {cPart}
-              </code>
-            );
+        const italicParts = cPart.split(/\*(.*?)\*/g);
+        return italicParts.map((iPart, iIdx) => {
+          if (iIdx % 2 === 1) {
+            return <em key={`i-${iIdx}`} className={`italic ${isUser ? 'text-brand-indigo/90' : 'text-warm-text/90'}`}>{iPart}</em>;
           }
-
-          // Split by italics (*text*)
-          const italicParts = cPart.split(/\*(.*?)\*/g);
-          return italicParts.map((iPart, iIdx) => {
-            if (iIdx % 2 === 1) {
-              return <em key={`i-${iIdx}`} className="italic text-warm-text/90">{iPart}</em>;
-            }
-            return iPart;
-          });
+          return iPart;
         });
       });
-    };
+    });
+  };
 
-    const trimmed = line.trim();
+  const blocks: Array<
+    | { type: 'table'; headers: string[]; rows: string[][] }
+    | { type: 'h1'; text: string }
+    | { type: 'h2'; text: string }
+    | { type: 'h3'; text: string }
+    | { type: 'hr' }
+    | { type: 'bullet'; text: string }
+    | { type: 'paragraph'; text: string }
+    | { type: 'spacer' }
+  > = [];
 
-    // Bullet list item (- or *)
-    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+  let i = 0;
+  while (i < rawLines.length) {
+    const trimmed = rawLines[i].trim();
+
+    if (trimmed.startsWith('|') && trimmed.endsWith('|') && i + 1 < rawLines.length) {
+      const nextTrimmed = rawLines[i + 1].trim();
+      if (nextTrimmed.startsWith('|') && nextTrimmed.includes('---')) {
+        const headerCells = trimmed
+          .split('|')
+          .slice(1, -1)
+          .map(c => c.trim());
+        
+        const tableRows: string[][] = [];
+        i += 2;
+
+        while (i < rawLines.length && rawLines[i].trim().startsWith('|') && rawLines[i].trim().endsWith('|')) {
+          const rowCells = rawLines[i]
+            .trim()
+            .split('|')
+            .slice(1, -1)
+            .map(c => c.trim());
+          tableRows.push(rowCells);
+          i++;
+        }
+
+        blocks.push({ type: 'table', headers: headerCells, rows: tableRows });
+        continue;
+      }
+    }
+
+    if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+      blocks.push({ type: 'hr' });
+    } else if (trimmed.startsWith('# ')) {
+      blocks.push({ type: 'h1', text: trimmed.slice(2) });
+    } else if (trimmed.startsWith('## ')) {
+      blocks.push({ type: 'h2', text: trimmed.slice(3) });
+    } else if (trimmed.startsWith('### ')) {
+      blocks.push({ type: 'h3', text: trimmed.slice(4) });
+    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      blocks.push({ type: 'bullet', text: trimmed.slice(2) });
+    } else if (!trimmed) {
+      blocks.push({ type: 'spacer' });
+    } else {
+      blocks.push({ type: 'paragraph', text: rawLines[i] });
+    }
+
+    i++;
+  }
+
+  return blocks.map((block, bIdx) => {
+    if (block.type === 'hr') {
+      return <hr key={`hr-${bIdx}`} className="my-2.5 border-warm-border/60" />;
+    }
+    if (block.type === 'spacer') {
+      return <div key={`sp-${bIdx}`} className="h-1.5" />;
+    }
+    if (block.type === 'h1') {
       return (
-        <div key={lIdx} className="flex items-start gap-2 my-0.5 pl-1">
+        <h3 key={`h1-${bIdx}`} className={`text-[13.5px] font-bold mt-2 mb-1 uppercase font-mono ${isUser ? 'text-brand-indigo' : 'text-warm-text'}`}>
+          {processInline(block.text)}
+        </h3>
+      );
+    }
+    if (block.type === 'h2') {
+      return (
+        <h4 key={`h2-${bIdx}`} className={`text-[13px] font-semibold mt-2 mb-0.5 font-sans ${isUser ? 'text-brand-indigo' : 'text-warm-text'}`}>
+          {processInline(block.text)}
+        </h4>
+      );
+    }
+    if (block.type === 'h3') {
+      return (
+        <h5 key={`h3-${bIdx}`} className={`text-[12px] font-semibold mt-1.5 mb-0.5 font-sans ${isUser ? 'text-brand-indigo' : 'text-warm-text'}`}>
+          {processInline(block.text)}
+        </h5>
+      );
+    }
+    if (block.type === 'bullet') {
+      return (
+        <div key={`b-${bIdx}`} className="flex items-start gap-2 my-0.5 pl-1">
           <span className="text-brand-indigo font-bold select-none text-[12px] leading-tight">•</span>
-          <div className="flex-1 text-[12.5px] leading-relaxed text-warm-text/90">
-            {processInline(trimmed.slice(2))}
+          <div className={`flex-1 text-[12px] leading-relaxed ${isUser ? 'text-brand-indigo/90' : 'text-warm-text/90'}`}>
+            {processInline(block.text)}
           </div>
         </div>
       );
     }
-
-    // Header 1 / 2 / 3
-    if (trimmed.startsWith('# ')) {
-      return <h3 key={lIdx} className="font-bold text-[14px] text-warm-text mt-2 mb-1">{processInline(trimmed.slice(2))}</h3>;
+    if (block.type === 'table') {
+      return (
+        <div key={`tbl-${bIdx}`} className="my-2 overflow-x-auto rounded-xl border border-warm-border bg-white shadow-2xs">
+          <table className="w-full text-left border-collapse text-[11px] font-sans">
+            <thead>
+              <tr className="bg-[#FAF9F7] border-b border-warm-border text-[10px] font-mono uppercase text-warm-text font-bold">
+                {block.headers.map((h, hIdx) => (
+                  <th key={hIdx} className={`py-2 px-2.5 ${hIdx > 0 ? 'text-right' : 'text-left'}`}>
+                    {processInline(h)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-warm-border/30">
+              {block.rows.map((row, rIdx) => (
+                <tr key={rIdx} className="hover:bg-[#FFF2EE]/25 transition-colors">
+                  {row.map((cell, cIdx) => (
+                    <td
+                      key={cIdx}
+                      className={`py-1.5 px-2.5 text-warm-text ${
+                        cIdx > 0 ? 'text-right font-mono font-medium' : 'text-left font-sans'
+                      }`}
+                    >
+                      {cell.includes('✓') ? (
+                        <span className="inline-flex items-center gap-1 font-bold text-[#2C6E25]">
+                          {processInline(cell)}
+                        </span>
+                      ) : cell.startsWith('+') ? (
+                        <span className="font-bold text-[#2C6E25]">{processInline(cell)}</span>
+                      ) : (
+                        processInline(cell)
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
     }
-    if (trimmed.startsWith('## ') || trimmed.startsWith('### ')) {
-      return <h4 key={lIdx} className="font-semibold text-[13px] text-warm-text mt-1.5 mb-0.5">{processInline(trimmed.replace(/^#+\s*/, ''))}</h4>;
-    }
-
-    // Empty paragraph line spacer
-    if (!trimmed) {
-      return <div key={lIdx} className="h-1.5" />;
-    }
-
-    // Standard paragraph line
     return (
-      <div key={lIdx} className="text-[12.5px] leading-relaxed">
-        {processInline(line)}
+      <div key={`p-${bIdx}`} className={`text-[12px] leading-relaxed ${isUser ? 'text-brand-indigo' : 'text-warm-text'}`}>
+        {processInline(block.text)}
       </div>
     );
   });
@@ -244,15 +348,18 @@ export default function RightPanel() {
         { role: 'assistant', content: reply },
       ];
 
-      let replyContent = reply;
-      const toolsUsed = Array.isArray(res.tools_used) ? res.tools_used.filter(Boolean) : [];
-      if (toolsUsed.length > 0) {
-        const formattedTools = toolsUsed.map(t => {
-          const clean = String(t).replace(/_/g, ' ');
-          return clean.charAt(0).toUpperCase() + clean.slice(1);
-        });
-        replyContent += `\n\n*Executed:* \`${formattedTools.join('`, `')}\``;
-      }
+      // Clean away any technical pipeline/load dumps and internal phase templates for a super conversational tone
+      let replyContent = (reply || '')
+        .replace(/━━━\s*PHASE\s*\d.*?━━━/gis, '')
+        .replace(/PHASE\s*\d\s*[—–-]\s*(THINK|CLARIFY|PLAN|EXECUTE).*?(?=\n\n|\n[A-Z]|\Z)/gis, '')
+        .replace(/──\s*DATA\s*(SCIENTIST|ENGINEER)\s*LENS\s*──.*?(?=\n\n|\n[A-Z]|\Z)/gis, '')
+        .replace(/DATA\s*(SCIENTIST|ENGINEER)\s*LENS:.*?(?=\n\n|\n[A-Z]|\Z)/gis, '')
+        .replace(/\*Executed:\*.*$/gm, '')
+        .replace(/Vectorising \d+\s*\/\s*\d+ fields/gi, '')
+        .replace(/Running pipeline step \d+/gi, '')
+        .trim();
+
+      const toolsUsed = res.tools_used || [];
 
       // Flow detection — determines routing and what to refresh
       const flow = detectFlow(toolsUsed);
@@ -361,7 +468,7 @@ export default function RightPanel() {
 
   if (selectedProvenanceMetric !== null) {
     return (
-      <aside className={`fixed lg:static top-12 right-0 z-40 w-[360px] sm:w-[400px] md:w-[420px] xl:w-[450px] max-w-[85vw] h-[calc(100vh-48px)] bg-white lg:bg-white/40 backdrop-blur-md border-l border-warm-border/50 flex flex-col justify-between isolate shrink-0 font-sans transition-transform duration-300 ease-in-out ${
+      <aside className={`fixed lg:static top-13 lg:top-0 right-0 z-40 w-[360px] sm:w-[400px] md:w-[420px] xl:w-[450px] max-w-[85vw] h-full bg-white lg:bg-white/40 backdrop-blur-md border-l border-warm-border/50 flex flex-col justify-between isolate shrink-0 font-sans transition-transform duration-300 ease-in-out ${
         rightSidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
       }`}>
         <ProvenanceInspector />
@@ -370,7 +477,7 @@ export default function RightPanel() {
   }
 
   return (
-    <aside className={`fixed lg:static top-12 right-0 z-40 w-[360px] sm:w-[400px] md:w-[420px] xl:w-[450px] max-w-[85vw] h-[calc(100vh-48px)] bg-white lg:bg-white/40 backdrop-blur-md border-l border-warm-border/50 flex flex-col justify-between isolate shrink-0 font-sans transition-transform duration-300 ease-in-out ${
+    <aside className={`fixed lg:static top-13 lg:top-0 right-0 z-40 w-[360px] sm:w-[400px] md:w-[420px] xl:w-[450px] max-w-[85vw] h-full bg-white lg:bg-white/40 backdrop-blur-md border-l border-warm-border/50 flex flex-col justify-between isolate shrink-0 font-sans transition-transform duration-300 ease-in-out ${
       rightSidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
     }`}>
       {/* 48px Header */}
@@ -426,7 +533,7 @@ export default function RightPanel() {
                     <span>Copy</span>
                   </button>
 
-                  {renderFormattedText((msg.content || '').replace(/^Hi there!/, `Hi ${firstName}.`))}
+                  {renderFormattedText((msg.content || '').replace(/^Hi there!/, `Hi ${firstName}.`), !isAI)}
 
                   {/* Suggestion Chips */}
                   {isAI && msg.chips && msg.chips.length > 0 && (
@@ -504,6 +611,11 @@ export default function RightPanel() {
           if (!file) return;
           try {
             setIsOptimizing(true);
+            useStore.setState({
+              worldModels: [],
+              optimisationResult: null,
+              scenarios: []
+            });
             const res = await api.uploadFile(file);
             addMessage({
               role: 'ai',

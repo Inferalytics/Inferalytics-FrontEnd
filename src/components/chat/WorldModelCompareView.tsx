@@ -105,6 +105,20 @@ export default function WorldModelCompareView({ worldModels }: Props) {
   // Sort by scenario number ascending
   const sorted = [...worldModels].sort((a, b) => a.scenario_number - b.scenario_number);
 
+  if (sorted.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center bg-[#FAF9F7]/50 rounded-2xl border border-warm-border">
+        <div className="h-12 w-12 rounded-xl bg-[#FFF2EE] border border-[#FFD4C5] flex items-center justify-center mb-3">
+          <Scale className="h-6 w-6 text-[#FF5A1F]" />
+        </div>
+        <h4 className="text-base font-bold text-warm-text mb-1">No Scenarios to Compare Yet</h4>
+        <p className="text-xs text-warm-muted max-w-sm">
+          Run two or more optimization scenarios in chat (e.g. Balanced vs Front-Loaded vs Catch-Up) to compare strategies, iterations, and convergence side-by-side.
+        </p>
+      </div>
+    );
+  }
+
   // Best scenario = most converged + highest EGR achieved (closest to target)
   const best = sorted.reduce((acc, wm) => {
     const achieved = parseP(wm.optimization_result.final_egr_percentage);

@@ -57,6 +57,12 @@ export default function SetupPanel() {
     if (!file) return;
     try {
       setUploadLoading(true);
+      // Clear previous batch leftover models
+      useStore.setState({
+        worldModels: [],
+        optimisationResult: null,
+        scenarios: []
+      });
       await api.uploadFile(file);
       if (syncBackendState) {
         await syncBackendState();
@@ -75,7 +81,7 @@ export default function SetupPanel() {
   const isFormInvalid = isFocalPointMissing || isSegmentsMissing || isVariablesMissing;
 
   return (
-    <div className="flex flex-col gap-6 animate-float-up pt-4 max-w-[960px] w-full mx-auto">
+    <div className="flex flex-col gap-6 animate-float-up pt-2 pb-12 max-w-[960px] w-full mx-auto font-sans select-none">
       {/* Hidden File Input */}
       <input
         type="file"
@@ -85,24 +91,24 @@ export default function SetupPanel() {
         className="hidden"
       />
       {/* Setup Card */}
-      <div className="w-full bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl shadow-float overflow-hidden flex flex-col justify-between transition-all">
-        <div className="p-6 border-b border-warm-border/60 bg-white/40">
+      <div className="w-full bg-white border border-warm-border rounded-2xl shadow-card overflow-hidden flex flex-col justify-between transition-all">
+        <div className="p-6 border-b border-warm-border bg-gradient-to-r from-white to-[#FAF9F7]/60">
           <div className="flex items-start justify-between">
             <div className="flex flex-col animate-fade-in">
-              <span className="text-[9.5px] font-bold text-brand-indigo uppercase tracking-wider block mb-1">
-                Step 1 of 3 · Business Configuration
+              <span className="text-[10.5px] font-mono font-bold text-[#FF5A1F] uppercase tracking-wider bg-[#FFF2EE] border border-[#FFD4C5] px-2.5 py-0.5 rounded-full w-fit mb-1.5">
+                Configuration · Step 1
               </span>
-              <h2 className="text-[18px] font-bold text-warm-text mb-0.5">
+              <h2 className="text-[20px] font-bold text-warm-text mb-0.5 tracking-tight">
                 Define simulation focus and strategic drivers
               </h2>
             </div>
 
-            <div className="flex bg-secondary p-0.5 rounded-lg border border-warm-border/40 text-[10.5px] font-medium text-warm-muted">
+            <div className="flex bg-[#FAF9F7] p-1 rounded-xl border border-warm-border text-[11px] font-semibold text-warm-muted">
               <button
                 onClick={() => navigate('/dashboard/blueprint/general')}
-                className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                   (!subtab || subtab === 'general')
-                    ? 'bg-white text-brand-indigo shadow-sm font-semibold'
+                    ? 'bg-white text-[#FF5A1F] shadow-xs font-bold border border-warm-border/50'
                     : 'hover:text-warm-text'
                 }`}
               >
@@ -110,9 +116,9 @@ export default function SetupPanel() {
               </button>
               <button
                 onClick={() => navigate('/dashboard/blueprint/sources')}
-                className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                   subtab === 'sources'
-                    ? 'bg-white text-brand-indigo shadow-sm font-semibold'
+                    ? 'bg-white text-[#FF5A1F] shadow-xs font-bold border border-warm-border/50'
                     : 'hover:text-warm-text'
                 }`}
               >
@@ -367,20 +373,20 @@ export default function SetupPanel() {
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-warm-bg border-t border-warm-border flex items-center justify-between shrink-0 font-sans">
-          <span className="text-[11px] text-warm-muted">
+        <div className="p-4 sm:p-5 bg-[#FAF9F7] border-t border-warm-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 font-sans">
+          <span className="text-[12px] text-warm-muted">
             {subtab === 'sources'
               ? `${setup.sources.length} baseline datasets loaded successfully`
               : `${setup.sources.length} baseline datasets · ${setup.segments.length + setup.parameters.length + 1} business variables configured`
             }
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 self-end sm:self-auto">
             <button
               onClick={handleSaveDraft}
               disabled={saveDraftLoading}
-              className="px-3 py-1.5 border border-warm-border bg-white hover:bg-secondary rounded-lg text-[12px] font-semibold text-warm-text transition-colors cursor-pointer font-sans disabled:opacity-50 flex items-center gap-1.5"
+              className="px-3.5 py-2 border border-warm-border bg-white hover:bg-[#FAF9F7] rounded-xl text-[12px] font-semibold text-warm-text transition-colors cursor-pointer font-sans disabled:opacity-50 flex items-center gap-1.5 shadow-2xs"
             >
-              {saveDraftLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : draftSaved ? '✓ Saved' : 'Save Draft'}
+              {saveDraftLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-[#FF5A1F]" /> : draftSaved ? '✓ Saved' : 'Save Draft'}
             </button>
             <button
               onClick={async () => {
@@ -411,14 +417,14 @@ export default function SetupPanel() {
                     console.warn('Agent setup message notice:', err);
                   }
 
-                  navigate('/dashboard/ecr-build');
+                  navigate('/dashboard/dimensions');
                 }
               }}
               disabled={(!subtab || subtab === 'general') && isFormInvalid}
-              className="px-4 py-1.5 bg-brand-indigo hover:opacity-90 active:opacity-100 text-white rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center gap-1 cursor-pointer font-sans disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-[#FF5A1F] hover:opacity-90 active:opacity-100 text-white rounded-xl text-[12.5px] font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer font-sans disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {subtab === 'sources' ? 'View Setup Summary' : 'Proceed to Simulation Builder'}
-              <ArrowRight className="h-3.5 w-3.5" />
+              <span>{subtab === 'sources' ? 'View Setup Summary' : 'Proceed to Dimensions'}</span>
+              <ArrowRight className="h-4 w-4" />
             </button>
           </div>
         </div>

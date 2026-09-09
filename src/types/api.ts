@@ -627,6 +627,21 @@ export interface WorldModel {
   world_model_tree: WorldModelTreeType | null;
 }
 
+// ─── Workspace Table (Conversational Table) ──────────────────────────────────
+
+export interface WorkspaceTableColumn {
+  id: string;        // stable key, e.g. "item", "data_source", "config", "scenario_1", "forecast_1"
+  name: string;      // human label, e.g. "Item", "Data Source", "Configuration", "Scenario 1 — 15% Growth"
+  type: "text" | "number" | "boolean" | "datetime" | "mixed";
+}
+
+export interface WorkspaceTable {
+  columns: WorkspaceTableColumn[];   // ordered — "item" is always index 0
+  rows: Record<string, any>[];       // each row is { id, item, [colId]: value, ... }
+  version: number;                   // increments on every update
+  updated_at: string | null;         // ISO-8601
+}
+
 // ─── AI Agent ─────────────────────────────────────────────────────────────────
 
 export interface ConversationTurn {
@@ -648,4 +663,5 @@ export interface AgentResponse {
   error: string | null;
   world_model: WorldModel | null;
   forecast: ForecastPipelineResult | null;
+  workspace_table?: WorkspaceTable | null;
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useSearchParams, Navigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import Header from './Header';
@@ -10,13 +10,17 @@ import api from '../../api';
 // Sync dictionary mapping nested route slugs to spec screens
 const routeTabMap: Record<string, number> = {
   conversation: 1,
+  dimensions: 2,
+  scenarios: 3,
+  // legacy backward compatibility routes
   blueprint: 2,
-  'ecr-build': 3,
-  'ecr-batch': 4,
-  'ips-engine': 5,
-  forecast: 6,
-  learning: 7,
-  'world-model': 8
+  'ecr-build': 2,
+  'ecr-batch': 2,
+  'ips-engine': 3,
+  workspace: 3,
+  forecast: 3,
+  learning: 3,
+  'world-model': 3,
 };
 
 export default function Shell() {
@@ -38,20 +42,28 @@ export default function Shell() {
   const [batchChecked, setBatchChecked] = useState(false);
   const [shouldRedirect, setShouldRedirect] = useState(false);
 
+  // Tracks the last URL batch id this effect has already reconciled, so an
+  // in-app switch (Header dropdown → setActiveBatch) isn't immediately fought
+  // by this effect re-reading the not-yet-updated URL and reverting back —
+  // that race is what caused the flicker on batch switch/create.
+  const lastSyncedUrlBatch = useRef<string | null>(null);
+
   useEffect(() => {
     const urlBatchId = searchParams.get('batch');
 
-    // If Zustand already has an active batch, trust it (user just switched)
-    if (activeBatchId) {
+    // Only pull the URL's batch into the store on a genuine external URL
+    // change (initial load, pasted link, back/forward) — not one we've
+    // already reconciled.
+    if (urlBatchId && urlBatchId !== activeBatchId && urlBatchId !== lastSyncedUrlBatch.current) {
+      lastSyncedUrlBatch.current = urlBatchId;
+      setActiveBatch(urlBatchId);
       setBatchChecked(true);
       return;
     }
 
-    // No active batch in Zustand — try URL param (only set if different to avoid clearing data)
-    if (urlBatchId) {
-      if (urlBatchId !== activeBatchId) {
-        setActiveBatch(urlBatchId);
-      }
+    // If Zustand already has an active batch, mark checked
+    if (activeBatchId) {
+      lastSyncedUrlBatch.current = activeBatchId;
       setBatchChecked(true);
       return;
     }
@@ -129,15 +141,15 @@ export default function Shell() {
     );
   }
 
-  const showPanels = true;
+  const showPanels = tab !== 'conversation' && tab !== undefined && tab !== '';
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-warm-gradient select-none">
-      {/* 48px Header */}
+    <div className="flex flex-col h-screen w-full overflow-x-hidden overflow-y-hidden bg-warm-gradient select-none">
+      {/* Header */}
       <Header />
 
       {/* Content Columns */}
-      <div className="flex flex-1 w-full h-[calc(100vh-48px)] overflow-hidden relative">
+      <div className="flex flex-1 w-full min-h-0 overflow-hidden relative">
         {/* Backdrop for Left Sidebar */}
         {showPanels && leftSidebarOpen && (
           <div

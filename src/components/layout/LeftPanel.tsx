@@ -43,7 +43,7 @@ export default function LeftPanel() {
   };
 
   return (
-    <aside className={`fixed lg:relative top-12 lg:top-0 left-0 z-40 h-[calc(100vh-48px)] bg-white lg:bg-white/40 backdrop-blur-md flex flex-col justify-between select-none isolate shrink-0 font-sans transition-all duration-300 ease-in-out ${
+    <aside className={`fixed lg:relative top-13 lg:top-0 left-0 z-40 h-full bg-white lg:bg-white/40 backdrop-blur-md flex flex-col justify-between select-none isolate shrink-0 font-sans transition-all duration-300 ease-in-out ${
       leftSidebarOpen
         ? 'w-[240px] p-4 border-r border-warm-border/50 translate-x-0 opacity-100'
         : 'w-0 p-0 border-r-0 -translate-x-full opacity-0 overflow-hidden'

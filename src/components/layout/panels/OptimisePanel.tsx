@@ -11,17 +11,17 @@ interface OptimisePanelProps {
   triggerToast: (msg: string) => void;
 }
 
-const CARD_W = 196;
-const CARD_H = 130;
+const CARD_W = 224;
+const CARD_H = 140;
 
 const INITIAL_POSITIONS: Record<string, { x: number; y: number }> = {
   qtr:    { x: 40,  y: 80  },
-  rev:    { x: 280, y: 80  },
-  reg:    { x: 520, y: 60  },
-  prod:   { x: 40,  y: 270 },
-  cost:   { x: 280, y: 270 },
-  margin: { x: 520, y: 270 },
-  egr:    { x: 280, y: 460 },
+  rev:    { x: 300, y: 80  },
+  reg:    { x: 560, y: 60  },
+  prod:   { x: 40,  y: 280 },
+  cost:   { x: 300, y: 280 },
+  margin: { x: 560, y: 280 },
+  egr:    { x: 300, y: 480 },
 };
 
 interface Connection {
@@ -61,42 +61,100 @@ const SOLVER_OPTIONS: { value: ModelType; label: string; desc: string }[] = [
 ];
 
 export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
-  const { setup, egrTarget, setEgrTarget, runOptimisation, model, setModel, activeBatchId, addMessage, syncBackendState, optimisationResult, setLatestForecast, latestForecast, worldModels, runFullScenario, pipelineStage } = useStore();
+  const {
+    setup,
+    egrTarget,
+    setEgrTarget,
+    runOptimisation,
+    model,
+    setModel,
+    activeBatchId,
+    addMessage,
+    syncBackendState,
+    optimisationResult,
+    setLatestForecast,
+    latestForecast,
+    worldModels,
+    runFullScenario,
+    pipelineStage,
+    visualTable,
+    workspaceTable,
+  } = useStore();
   const navigate = useNavigate();
 
-  // Dynamically derive dimension cards from setup parameters & segments or default
+  // Dynamically derive dimension cards from active dataset / setup / workspaceTable
   const dynamicDimensions = React.useMemo(() => {
-    const items: { id: string; name: string; type: 'numeric' | 'categorical' | 'date'; samples: string[] }[] = [
-      { id: 'qtr', name: 'Quarter', type: 'date', samples: setup.timeRange ? [setup.timeRange.split(' → ')[0] || 'Q1', setup.timeRange.split(' → ')[1] || 'Q4'] : ['Q1', 'Q2', 'Q3'] },
-    ];
+    if (setup.parameters && setup.parameters.length > 0) {
+      const items: { id: string; name: string; type: 'numeric' | 'categorical' | 'date'; samples: string[] }[] = [
+        { id: 'qtr', name: setup.timeGranularity || 'Quarter', type: 'date', samples: setup.timeRange ? [setup.timeRange.split(' → ')[0] || 'Q1', setup.timeRange.split(' → ')[1] || 'Q4'] : ['Q1', 'Q2', 'Q3'] },
+      ];
 
-    (setup.parameters || ['Sales', 'Revenue']).forEach((param, pIdx) => {
+      setup.parameters.forEach((param, pIdx) => {
+        items.push({
+          id: `param-${pIdx}`,
+          name: param,
+          type: 'numeric',
+          samples: [],
+        });
+      });
+
+      (setup.segments || []).forEach((seg, sIdx) => {
+        items.push({
+          id: `seg-${sIdx}`,
+          name: seg,
+          type: 'categorical',
+          samples: [],
+        });
+      });
+
       items.push({
-        id: `param-${pIdx}`,
-        name: param,
+        id: 'egr',
+        name: 'EGR Estimate',
         type: 'numeric',
-        samples: []
+        samples: [`target: ${egrTarget}%`],
       });
-    });
 
-    (setup.segments || ['Region', 'Category']).forEach((seg, sIdx) => {
+      return items;
+    }
+
+    if (workspaceTable && workspaceTable.columns && workspaceTable.columns.length > 0) {
+      const items: { id: string; name: string; type: 'numeric' | 'categorical' | 'date'; samples: string[] }[] = [
+        { id: 'qtr', name: 'Scenarios Axis', type: 'date', samples: workspaceTable.columns.slice(1, 3).map(c => c.name) },
+      ];
+      workspaceTable.rows.slice(0, 3).forEach((r, idx) => {
+        items.push({
+          id: `param-${idx}`,
+          name: String(r.item || r.name || `Metric ${idx + 1}`),
+          type: 'numeric',
+          samples: [`$${r.scenario_1 ?? '0'}`],
+        });
+      });
       items.push({
-        id: `seg-${sIdx}`,
-        name: seg,
+        id: 'seg-0',
+        name: 'Segment Driver',
         type: 'categorical',
-        samples: []
+        samples: ['Active Matrix'],
       });
-    });
+      items.push({
+        id: 'egr',
+        name: 'EGR Estimate',
+        type: 'numeric',
+        samples: [`target: ${egrTarget}%`],
+      });
+      return items;
+    }
 
-    items.push({
-      id: 'egr',
-      name: 'EGR Estimate',
-      type: 'numeric',
-      samples: [`target: ${egrTarget}%`], // overridden by getCardSamples when forecast is active
-    });
-
-    return items;
-  }, [setup.parameters, setup.segments, setup.timeRange, egrTarget]);
+    // Default: derived from visualTable (Healthcare & Macroeconomic Outlook)
+    return [
+      { id: 'qtr', name: 'Horizon (2020–2030)', type: 'date', samples: ['2020–2022', '2023–2030'] },
+      { id: 'param-0', name: 'National Health Exp.', type: 'numeric', samples: ['$4,886.5B (2023)', 'YoY: +8.0%'] },
+      { id: 'param-1', name: 'Gross Domestic Product', type: 'numeric', samples: ['$27,720.7B', 'YoY: +6.6%'] },
+      { id: 'param-2', name: 'Personal Income', type: 'numeric', samples: ['$23,402.5B', 'YoY: +5.9%'] },
+      { id: 'seg-0', name: 'Private Insurance', type: 'categorical', samples: ['$1,464.6B'] },
+      { id: 'seg-1', name: 'Personal Care', type: 'categorical', samples: ['$1,313.9B'] },
+      { id: 'egr', name: 'EGR Estimate', type: 'numeric', samples: [`target: ${egrTarget}%`] },
+    ];
+  }, [setup.parameters, setup.segments, setup.timeRange, setup.timeGranularity, egrTarget, workspaceTable, visualTable]);
 
   // Compute clean layout grid positions dynamically based on real items count.
   // Layout: Quarter (top-left) → params (top row) → segments (middle row) → EGR (bottom centre).
@@ -106,8 +164,8 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
     const params  = dynamicDimensions.filter(d => d.id.startsWith('param-'));
     const segs    = dynamicDimensions.filter(d => d.id.startsWith('seg-'));
 
-    const COL_W = 230;
-    const ROW_H = 170;
+    const COL_W = 260;
+    const ROW_H = 180;
     const LEFT  = 40;
     const ROW1  = 60;   // Quarter + params
     const ROW2  = ROW1 + ROW_H; // segments
@@ -373,41 +431,108 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4 animate-float-up w-full max-w-[920px] mx-auto pt-4">
+    <div className="flex flex-col gap-6 animate-float-up w-full max-w-[1280px] mx-auto pt-2 pb-16 font-sans">
+
+      {/* Workspace Header Card */}
+      <div className="bg-white border border-warm-border rounded-2xl shadow-card p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10.5px] font-mono uppercase tracking-wider text-[#FF5A1F] font-bold bg-[#FFF2EE] px-2.5 py-0.5 rounded-full border border-[#FFD4C5]">
+              Screen 03 · Scenarios & Optimization
+            </span>
+            <span className="text-[11px] text-warm-muted font-mono font-medium">
+              · Solver: {currentSolver.label.split('(')[0].trim()}
+            </span>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-warm-text mt-1.5 tracking-tight">
+            Scenario Modeling & Sensitivity Inference
+          </h1>
+          <p className="text-[12.5px] text-warm-muted mt-0.5">
+            Execute Newton-Raphson gradient optimization or Holt-Winters forecasting to model growth targets and sensitivity paths.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => navigate(`/dashboard/conversation${activeBatchId ? `?batch=${activeBatchId}` : ''}`)}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-warm-bg text-warm-text text-[12.5px] font-bold border border-warm-border shadow-2xs cursor-pointer transition-all"
+          >
+            <span>Back to Conversation</span>
+          </button>
+        </div>
+      </div>
 
       {/* ── Controls bar ─────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2.5 bg-white border border-warm-border rounded-2xl shadow-float p-3 z-40 select-none relative overflow-visible">
+      <div className="flex flex-wrap items-center gap-3 bg-white border border-warm-border rounded-2xl shadow-card p-3 sm:p-3.5 z-40 select-none relative overflow-visible">
 
-        {/* Group 1 — targets */}
-        <div className="flex items-center gap-1.5 bg-warm-bg/50 border border-warm-border/60 rounded-xl px-2.5 py-1.5">
-          <span className="text-[10px] font-bold text-warm-muted uppercase tracking-wide shrink-0">EGR</span>
-          <input type="number" value={egrTarget} onChange={e => setEgrTarget(Number(e.target.value))}
-            className="w-8 text-center bg-transparent border-none outline-none font-bold text-brand-indigo text-[12px] font-sans focus:ring-0" />
-          <span className="font-bold text-brand-indigo text-[12px]">%</span>
+        {/* Group 1 — EGR targets & Preset Pills */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-[#FAF9F7] border border-warm-border rounded-xl px-3 py-1.5 shadow-2xs">
+            <span className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wide shrink-0 font-mono">EGR</span>
+            <input
+              type="number"
+              value={egrTarget}
+              onChange={e => setEgrTarget(Number(e.target.value))}
+              className="w-10 text-center bg-transparent border-none outline-none font-bold text-[#FF5A1F] text-[13px] font-mono focus:ring-0"
+            />
+            <span className="font-bold text-[#FF5A1F] text-[12px] font-mono">%</span>
+          </div>
+
+          <div className="hidden sm:flex items-center gap-1 bg-[#F4F1EC] p-1 rounded-xl border border-warm-border/60">
+            {[
+              { val: 0, label: 'Baseline' },
+              { val: 5, label: '+5%' },
+              { val: 10, label: '+10%' },
+              { val: 12, label: '12% Target' },
+              { val: 15, label: '+15%' },
+            ].map(pill => (
+              <button
+                key={pill.label}
+                onClick={() => setEgrTarget(pill.val)}
+                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-mono font-semibold transition-all cursor-pointer ${
+                  egrTarget === pill.val
+                    ? 'bg-[#FF5A1F] text-white shadow-xs'
+                    : 'text-warm-muted hover:text-warm-text hover:bg-white/80'
+                }`}
+              >
+                {pill.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <span className="h-5 w-px bg-warm-border/60 shrink-0" />
 
-        {/* Group 2 — time + method */}
-        <span className="text-[10.5px] font-mono font-semibold text-brand-indigo bg-lavender/20 border border-lavender/40 px-2 py-1 rounded-lg whitespace-nowrap shrink-0">
+        {/* Group 2 — time + solver method */}
+        <span className="text-[11px] font-mono font-bold text-[#5B50A0] bg-[#EAE8F7] border border-[#D4D0EE] px-2.5 py-1 rounded-xl whitespace-nowrap shrink-0">
           Q1 → Q4 2025
         </span>
 
         <div className="relative shrink-0">
-          <button onClick={() => setSolverOpen(o => !o)}
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-secondary border border-warm-border/60 rounded-lg text-[11px] font-semibold text-warm-text hover:bg-muted transition-colors cursor-pointer whitespace-nowrap">
-            {currentSolver.label}
-            <ChevronDown className="h-3 w-3 text-warm-muted" />
+          <button
+            onClick={() => setSolverOpen(o => !o)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF9F7] hover:bg-warm-bg border border-warm-border rounded-xl text-[12px] font-semibold text-warm-text transition-all cursor-pointer whitespace-nowrap shadow-2xs"
+          >
+            <span>{currentSolver.label}</span>
+            <ChevronDown className="h-3.5 w-3.5 text-warm-muted" />
           </button>
           {solverOpen && (
-            <div className="absolute top-8 left-0 w-52 bg-white border border-warm-border rounded-xl shadow-xl p-1.5 z-[999] animate-float-up">
+            <div className="absolute top-10 left-0 w-64 bg-white border border-warm-border rounded-2xl shadow-float p-1.5 z-[999] animate-float-up font-sans">
+              <div className="px-2.5 py-1 text-[10px] font-bold text-warm-muted uppercase tracking-wider font-mono border-b border-warm-border/50 pb-1 mb-1">
+                Optimization Engine
+              </div>
               {SOLVER_OPTIONS.map(opt => (
-                <button key={opt.value} onClick={() => { setModel(opt.value); setSolverOpen(false); }}
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-[11px] transition-colors cursor-pointer flex items-center justify-between ${
-                    model === opt.value ? 'bg-lavender/20 text-brand-indigo font-semibold' : 'hover:bg-warm-bg text-warm-text'
-                  }`}>
-                  <span>{opt.label}</span>
-                  <span className="text-[9px] text-warm-muted">{opt.desc}</span>
+                <button
+                  key={opt.value}
+                  onClick={() => { setModel(opt.value); setSolverOpen(false); }}
+                  className={`w-full text-left px-3 py-2 rounded-xl text-[11.5px] transition-colors cursor-pointer flex flex-col gap-0.5 ${
+                    model === opt.value
+                      ? 'bg-[#FFF2EE] text-[#FF5A1F] font-bold border border-[#FFD4C5]'
+                      : 'hover:bg-[#FAF9F7] text-warm-text border border-transparent'
+                  }`}
+                >
+                  <span className="font-semibold">{opt.label}</span>
+                  <span className="text-[10px] text-warm-muted font-normal">{opt.desc}</span>
                 </button>
               ))}
             </div>
@@ -419,33 +544,37 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
         {/* Group 3 — link status */}
         {linkSource ? (
           <div className="flex items-center gap-1.5 shrink-0">
-            <div className="flex items-center gap-1.5 bg-peach/10 border border-peach/40 rounded-lg px-2.5 py-1">
-              <Link2 className="h-3 w-3 text-peach" />
-              <span className="text-[10.5px] font-semibold text-peach whitespace-nowrap">
+            <div className="flex items-center gap-1.5 bg-[#FFF2EE] border border-[#FFD4C5] rounded-xl px-2.5 py-1">
+              <Link2 className="h-3.5 w-3.5 text-[#FF5A1F]" />
+              <span className="text-[11px] font-bold text-[#FF5A1F] whitespace-nowrap">
                 ↳ {dynamicDimensions.find(d => d.id === linkSource)?.name}
               </span>
             </div>
-            <button onClick={() => setLinkSource(null)}
-              className="px-2 py-1 border border-warm-border/60 bg-white hover:bg-secondary rounded-lg text-[10px] text-warm-muted cursor-pointer transition-colors shrink-0">
+            <button
+              onClick={() => setLinkSource(null)}
+              className="px-2.5 py-1 border border-warm-border bg-white hover:bg-[#FAF9F7] rounded-xl text-[10.5px] text-warm-muted hover:text-warm-text cursor-pointer transition-colors shrink-0 font-medium"
+            >
               Cancel
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-1 text-[10px] text-warm-muted shrink-0">
-            <Link2 className="h-3 w-3" />
-            <span>Hover edge to link</span>
+          <div className="flex items-center gap-1 text-[11px] text-warm-muted shrink-0 font-mono">
+            <Link2 className="h-3.5 w-3.5" />
+            <span>Hover card edge to link</span>
           </div>
         )}
 
         {customCount > 0 && (
-          <button onClick={resetConnections}
-            className="flex items-center gap-1 px-2 py-1 border border-warm-border/60 bg-white hover:bg-secondary rounded-lg text-[10px] text-warm-muted transition-colors cursor-pointer shrink-0">
-            <RefreshCw className="h-2.5 w-2.5" /> Reset
+          <button
+            onClick={resetConnections}
+            className="flex items-center gap-1 px-2.5 py-1 border border-warm-border bg-white hover:bg-[#FAF9F7] rounded-xl text-[11px] text-warm-muted hover:text-warm-text transition-colors cursor-pointer shrink-0 font-mono"
+          >
+            <RefreshCw className="h-3 w-3" /> Reset
           </button>
         )}
 
-        {/* Group 4 — actions (pushed to right) */}
-        <div className="flex items-center gap-1.5 ml-auto shrink-0">
+        {/* Group 4 — action buttons (pushed right) */}
+        <div className="flex items-center gap-2 ml-auto shrink-0">
           <button
             onClick={async () => {
               try {
@@ -489,18 +618,18 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
               }
             }}
             disabled={forecastLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-warm-border bg-white hover:bg-secondary rounded-xl text-[11.5px] font-semibold text-warm-text cursor-pointer transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-2 border border-warm-border bg-white hover:bg-[#FAF9F7] rounded-xl text-[12px] font-semibold text-warm-text cursor-pointer transition-colors disabled:opacity-50 shadow-2xs"
           >
-            {forecastLoading ? <RotateCw className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3 text-warm-muted" />}
-            Run Forecast (Prediction)
+            {forecastLoading ? <RotateCw className="h-3.5 w-3.5 animate-spin text-[#FF5A1F]" /> : <TrendingUp className="h-3.5 w-3.5 text-warm-muted" />}
+            <span>Run Forecast</span>
           </button>
+
           <button
             onClick={async () => {
               try {
                 setIsOptimizing(true);
 
                 // Pass optimization request to Data Ops AI agent
-                // Flow C: if a forecast is active, use its predicted value as the target
                 const userPrompt = activeForecast
                   ? `Run optimisation inference using ${model} solver to achieve the forecasted value of ${activeForecast.forecasted_value.toLocaleString(undefined, { maximumFractionDigits: 2 })} for period ${activeForecast.target_time} (predicted growth rate: ${activeForecast.predicted_growth_rate_percentage}). Identify the data changes, drivers, and strategies required to reach this forecast target.`
                   : `Run optimisation inference using ${model} solver against ${egrTarget}% EGR target`;
@@ -532,24 +661,26 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
               }
             }}
             disabled={isOptimizing}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-indigo hover:bg-brand-indigo/90 disabled:opacity-50 text-white rounded-xl text-[11.5px] font-bold shadow-sm transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 bg-[#FF5A1F] hover:opacity-90 disabled:opacity-50 text-white rounded-xl text-[12.5px] font-bold shadow-xs transition-all cursor-pointer"
           >
-            {isOptimizing ? <RotateCw className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3 fill-current" />}
-            Run Optimisation (Inference)
+            {isOptimizing ? <RotateCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+            <span>Run Optimisation (Inference)</span>
           </button>
+
           {latestWorldModel && optimisationResult && (
             <button
               onClick={() => setInsightsOpen(o => !o)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-xl text-[11.5px] font-semibold transition-colors cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl text-[12px] font-semibold transition-colors cursor-pointer ${
                 insightsOpen
-                  ? 'border-brand-indigo bg-brand-indigo/10 text-brand-indigo'
-                  : 'border-warm-border bg-white hover:bg-secondary text-warm-text'
+                  ? 'border-[#FF5A1F] bg-[#FFF2EE] text-[#FF5A1F]'
+                  : 'border-warm-border bg-white hover:bg-warm-bg text-warm-text'
               }`}
             >
-              <TrendingUp className="h-3 w-3" />
-              {insightsOpen ? 'Hide insights' : 'Show insights'}
+              <TrendingUp className="h-3.5 w-3.5" />
+              <span>{insightsOpen ? 'Hide Insights' : 'Show Insights'}</span>
             </button>
           )}
+
           {runFullScenario && (
             <button
               onClick={() => {
@@ -557,10 +688,10 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
                 void runFullScenario({ navigate, triggerToast, batchQuery });
               }}
               disabled={isOptimizing}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-[11.5px] font-bold shadow-sm transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#1A1918] hover:bg-black disabled:opacity-50 text-white rounded-xl text-[12px] font-bold shadow-xs transition-colors cursor-pointer"
             >
-              <Zap className="h-3 w-3" />
-              Run Full Scenario
+              <Zap className="h-3.5 w-3.5 text-[#FF5A1F]" />
+              <span>Run Full Scenario</span>
             </button>
           )}
         </div>
@@ -810,47 +941,47 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
                 drag?.id === d.id   ? 'cursor-grabbing shadow-xl z-30' :
                 isEdgeHovered       ? 'cursor-crosshair' : 'cursor-grab'
               } ${
-                isEgrForecast ? 'bg-gradient-to-b from-white to-brand-indigo/5 border-brand-indigo ring-2 ring-brand-indigo/25 shadow-md' :
-                isSource      ? 'bg-white border-peach ring-2 ring-peach/30 shadow-md' :
-                isPinned      ? 'bg-white border-amber-warm ring-2 ring-amber-warm-light' :
-                isSel         ? 'bg-white border-brand-indigo ring-2 ring-brand-indigo/20 shadow-md' :
-                isEdgeHovered ? 'bg-white border-peach/60 ring-2 ring-peach/20 shadow-md' :
-                                'bg-white border-warm-border hover:shadow-md shadow-sm'
+                isEgrForecast ? 'bg-gradient-to-b from-white to-[#FFF2EE]/40 border-[#FF5A1F] ring-2 ring-[#FF5A1F]/25 shadow-md' :
+                isSource      ? 'bg-white border-[#FF5A1F] ring-2 ring-[#FF5A1F]/30 shadow-md' :
+                isPinned      ? 'bg-white border-[#FF5A1F] ring-2 ring-[#FF5A1F]/20' :
+                isSel         ? 'bg-white border-[#5B50A0] ring-2 ring-[#5B50A0]/20 shadow-md' :
+                isEdgeHovered ? 'bg-white border-[#FF5A1F]/60 ring-2 ring-[#FF5A1F]/20 shadow-md' :
+                                'bg-white border-warm-border hover:shadow-md shadow-card'
               }`}
               style={{ left: pos.x, top: pos.y, width: cardWidth }}
             >
-              <div className={`p-3 pb-2 flex flex-col gap-1 font-sans ${isEgrForecast ? 'bg-brand-indigo/5 border-b border-brand-indigo/15' : ''}`}>
+              <div className={`p-3.5 pb-2 flex flex-col gap-1 font-sans ${isEgrForecast ? 'bg-[#FFF2EE]/50 border-b border-[#FFD4C5]' : ''}`}>
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className={`text-[12px] font-bold truncate ${isEgrForecast ? 'text-brand-indigo max-w-[172px]' : 'text-warm-text max-w-[110px]'}`}>{d.name}</span>
+                    <span className={`text-[12.5px] font-bold truncate ${isEgrForecast ? 'text-[#FF5A1F] max-w-[190px]' : 'text-warm-text max-w-[140px]'}`}>{d.name}</span>
                     {isEgrForecast && (
-                      <span className="shrink-0 text-[8.5px] font-bold bg-brand-indigo text-white px-1.5 py-0.5 rounded-full uppercase tracking-wide">Target</span>
+                      <span className="shrink-0 text-[8.5px] font-bold bg-[#FF5A1F] text-white px-2 py-0.5 rounded-full uppercase tracking-wide font-mono">Target</span>
                     )}
                     {!isEgrForecast && !!activeForecast && d.id.startsWith('param-') && (
-                      <span className="shrink-0 text-[8px] font-bold bg-brand-indigo/10 text-brand-indigo px-1 py-0.5 rounded uppercase tracking-wide">Driver</span>
+                      <span className="shrink-0 text-[8px] font-bold bg-[#EAE8F7] text-[#5B50A0] px-1.5 py-0.5 rounded-full uppercase tracking-wide font-mono">Driver</span>
                     )}
                     {!isEgrForecast && !!activeForecast && d.id.startsWith('seg-') && (
-                      <span className="shrink-0 text-[8px] font-bold bg-amber-warm-light text-amber-warm px-1 py-0.5 rounded uppercase tracking-wide">Modifier</span>
+                      <span className="shrink-0 text-[8px] font-bold bg-[#FFF2EE] text-[#FF5A1F] px-1.5 py-0.5 rounded-full uppercase tracking-wide font-mono">Modifier</span>
                     )}
                   </div>
                   <button
                     onMouseDown={e => { e.stopPropagation(); setPinnedIds(prev => { const n = new Set(prev); n.has(d.id) ? n.delete(d.id) : n.add(d.id); return n; }); }}
                     onClick={e => e.stopPropagation()}
-                    className={`shrink-0 cursor-pointer transition-colors ${isPinned ? 'text-amber-warm' : 'text-warm-border hover:text-warm-muted'}`}
+                    className={`shrink-0 cursor-pointer transition-colors ${isPinned ? 'text-[#FF5A1F]' : 'text-warm-border hover:text-warm-muted'}`}
                   >
                     <Pin className={`h-3.5 w-3.5 ${isPinned ? 'fill-current' : ''}`} />
                   </button>
                 </div>
-                <span className={`w-fit text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${
-                  d.type === 'numeric'     ? 'bg-lavender/30 text-brand-indigo' :
-                  d.type === 'categorical' ? 'bg-amber-warm-light text-amber-warm' :
-                                            'bg-sage-light text-sage'
+                <span className={`w-fit text-[9px] font-mono font-bold px-2 py-0.5 rounded-full uppercase border ${
+                  d.type === 'numeric'     ? 'bg-[#EAE8F7] text-[#5B50A0] border-[#D4D0EE]' :
+                  d.type === 'categorical' ? 'bg-[#FFF2EE] text-[#FF5A1F] border-[#FFD4C5]' :
+                                            'bg-[#EBF4E8] text-[#2C6E25] border-[#C8E4C0]'
                 }`}>{d.type}</span>
               </div>
 
               {isEgrForecast ? (
                 /* ── EGR card in Flow C: structured rows ── */
-                <div className="px-3 py-2.5 flex flex-col gap-1.5 border-b border-brand-indigo/15">
+                <div className="px-3.5 py-2.5 flex flex-col gap-1.5 border-b border-[#FFD4C5]">
                   {getCardSamples(d).map((s, si) => {
                     const [label, ...rest] = s.split(': ');
                     const val = rest.join(': ');
@@ -858,44 +989,44 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
                     const isAchieved  = label === 'achieved';
                     return (
                       <div key={si} className="flex items-baseline justify-between gap-2">
-                        <span className="text-[9.5px] font-semibold text-warm-muted uppercase tracking-wide shrink-0">{label}</span>
-                        <span className={`font-mono leading-tight ${
-                          isMainValue ? 'text-[13px] font-extrabold text-brand-indigo' :
-                          isAchieved  ? 'text-[11px] font-bold text-sage' :
-                                        'text-[11px] font-semibold text-warm-text'
+                        <span className="text-[9.5px] font-semibold text-warm-muted uppercase tracking-wide shrink-0 font-mono">{label}</span>
+                        <span className={`font-mono tabular-nums leading-tight ${
+                          isMainValue ? 'text-[13.5px] font-extrabold text-[#FF5A1F]' :
+                          isAchieved  ? 'text-[11.5px] font-bold text-[#2C6E25]' :
+                                        'text-[11.5px] font-semibold text-warm-text'
                         }`}>{val}</span>
                       </div>
                     );
                   })}
                 </div>
               ) : (
-                <div className="px-3 pb-3 flex flex-col gap-0.5 border-b border-warm-border/30">
+                <div className="px-3.5 pb-3 flex flex-col gap-0.5 border-b border-warm-border/30">
                   {getCardSamples(d).map((s, si) => (
                     <span key={si} className="text-[11px] font-mono text-warm-muted leading-tight truncate">{s}</span>
                   ))}
                 </div>
               )}
 
-              <div className={`px-3 py-1.5 flex items-center gap-1.5 ${
-                isSource      ? 'bg-peach/10' :
-                isPinned      ? 'bg-amber-warm-light/40' :
-                isEgrForecast ? 'bg-brand-indigo/8' :
-                                'bg-warm-bg/40'
+              <div className={`px-3.5 py-1.5 flex items-center gap-1.5 ${
+                isSource      ? 'bg-[#FFF2EE]' :
+                isPinned      ? 'bg-[#FFF2EE]/60' :
+                isEgrForecast ? 'bg-[#FFF2EE]/40' :
+                                'bg-[#FAF9F7]'
               }`}>
                 {isSource ? (
-                  <><span className="h-1.5 w-1.5 rounded-full bg-peach animate-pulse shrink-0" /><span className="text-[10px] font-mono text-peach">Linking source…</span></>
+                  <><span className="h-1.5 w-1.5 rounded-full bg-[#FF5A1F] animate-pulse shrink-0" /><span className="text-[10px] font-mono text-[#FF5A1F] font-semibold">Linking source…</span></>
                 ) : isPinned ? (
-                  <><span className="h-1.5 w-1.5 rounded-full bg-amber-warm shrink-0" /><span className="text-[10px] font-mono text-amber-warm">Pinned · Q3 values</span></>
+                  <><span className="h-1.5 w-1.5 rounded-full bg-[#FF5A1F] shrink-0" /><span className="text-[10px] font-mono text-[#FF5A1F] font-medium">Pinned · Q3 values</span></>
                 ) : isEgrForecast ? (
-                  <><span className="h-1.5 w-1.5 rounded-full bg-brand-indigo animate-pulse shrink-0" /><span className="text-[10px] font-semibold text-brand-indigo">Forecast-driven target</span></>
+                  <><span className="h-1.5 w-1.5 rounded-full bg-[#FF5A1F] animate-pulse shrink-0" /><span className="text-[10px] font-semibold text-[#FF5A1F]">Forecast-driven target</span></>
                 ) : activeForecast && d.id.startsWith('param-') && latestWorldModel ? (
-                  <><span className="h-1.5 w-1.5 rounded-full bg-brand-indigo animate-pulse shrink-0" /><span className="text-[10px] font-mono text-brand-indigo">Newton-Raphson optimised</span></>
+                  <><span className="h-1.5 w-1.5 rounded-full bg-[#5B50A0] animate-pulse shrink-0" /><span className="text-[10px] font-mono text-[#5B50A0]">Newton-Raphson optimised</span></>
                 ) : activeForecast && d.id.startsWith('param-') ? (
-                  <><span className="h-1.5 w-1.5 rounded-full bg-brand-indigo animate-pulse shrink-0" /><span className="text-[10px] font-mono text-brand-indigo">Primary driver</span></>
+                  <><span className="h-1.5 w-1.5 rounded-full bg-[#5B50A0] animate-pulse shrink-0" /><span className="text-[10px] font-mono text-[#5B50A0]">Primary driver</span></>
                 ) : activeForecast && d.id.startsWith('seg-') && latestWorldModel?.distribution_difference ? (
-                  <><span className="h-1.5 w-1.5 rounded-full bg-amber-warm animate-pulse shrink-0" /><span className="text-[10px] font-mono text-amber-warm">{latestWorldModel.distribution_difference.validation_verdict ?? 'Distribution checked'}</span></>
+                  <><span className="h-1.5 w-1.5 rounded-full bg-[#FF5A1F] animate-pulse shrink-0" /><span className="text-[10px] font-mono text-[#FF5A1F]">{latestWorldModel.distribution_difference.validation_verdict ?? 'Distribution checked'}</span></>
                 ) : activeForecast && d.id.startsWith('seg-') ? (
-                  <><span className="h-1.5 w-1.5 rounded-full bg-amber-warm animate-pulse shrink-0" /><span className="text-[10px] font-mono text-amber-warm">Segment modifier</span></>
+                  <><span className="h-1.5 w-1.5 rounded-full bg-[#FF5A1F] animate-pulse shrink-0" /><span className="text-[10px] font-mono text-[#FF5A1F]">Segment modifier</span></>
                 ) : (
                   <><span className="h-1.5 w-1.5 rounded-full bg-sage animate-pulse shrink-0" /><span className="text-[10px] font-mono text-warm-muted">Vectorised ✓</span></>
                 )}

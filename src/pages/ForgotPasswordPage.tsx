@@ -72,8 +72,8 @@ export default function ForgotPasswordPage() {
           Back to Sign In
         </Link>
         
-        <div className="flex flex-col gap-2">
-          <h2 className="text-[24px] font-extrabold text-warm-text leading-tight tracking-tight font-sans">
+        <div className="flex flex-col gap-1.5">
+          <h2 className="text-[24px] sm:text-[26px] font-bold text-warm-text leading-tight tracking-tight">
             Reset Password
           </h2>
           <p className="text-[13px] text-warm-muted leading-relaxed">
@@ -84,16 +84,16 @@ export default function ForgotPasswordPage() {
         </div>
 
         {error && (
-          <div className="p-3.5 bg-destructive/10 border border-destructive/20 rounded-xl flex items-start gap-2.5 text-[11.5px] text-destructive">
+          <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-[12px] text-red-600">
             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
         )}
 
         {!successfulCreation ? (
-          <form onSubmit={requestPasswordReset} className="flex flex-col gap-4.5">
+          <form onSubmit={requestPasswordReset} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider pl-0.5">
+              <label className="text-[11px] font-bold text-warm-muted uppercase tracking-wider font-mono pl-0.5">
                 Email Address
               </label>
               <input
@@ -102,25 +102,23 @@ export default function ForgotPasswordPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="robert@company.com"
-                className="w-full px-3 py-2.5 border border-warm-border bg-white rounded-xl text-[12.5px] text-warm-text placeholder-warm-muted/50 focus:outline-none focus:border-brand-indigo focus:ring-1 focus:ring-ring transition-all"
+                className="w-full px-3.5 py-2.5 border border-warm-border bg-white rounded-xl text-[13px] text-warm-text placeholder:text-warm-muted/50 focus:outline-none focus:border-[#FF5A1F] focus:ring-2 focus:ring-[#FF5A1F]/20 transition-all font-sans"
               />
             </div>
 
             <button
               type="submit"
               disabled={loading || !isLoaded}
-              className="w-full py-2.5 mt-2 rounded-xl bg-primary hover:opacity-90 active:opacity-100 text-primary-foreground text-[12.5px] font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              className="w-full py-2.5 mt-2 rounded-xl bg-[#FF5A1F] hover:opacity-90 active:opacity-100 text-white text-[13px] font-bold shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              {loading ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : null}
+              {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
               Send Reset Code
             </button>
           </form>
         ) : (
-          <form onSubmit={resetPassword} className="flex flex-col gap-4.5">
+          <form onSubmit={resetPassword} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider pl-0.5">
+              <label className="text-[11px] font-bold text-warm-muted uppercase tracking-wider font-mono pl-0.5">
                 Reset Code
               </label>
               <input
@@ -128,13 +126,13 @@ export default function ForgotPasswordPage() {
                 required
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder="Enter 6-digit code"
-                className="w-full px-3 py-2.5 border border-warm-border bg-white rounded-xl text-[12.5px] text-warm-text placeholder-warm-muted/50 focus:outline-none focus:border-brand-indigo focus:ring-1 focus:ring-ring transition-all"
+                placeholder="123456"
+                className="w-full px-3.5 py-2.5 border border-warm-border bg-white rounded-xl text-[13px] text-warm-text placeholder:text-warm-muted/50 focus:outline-none focus:border-[#FF5A1F] focus:ring-2 focus:ring-[#FF5A1F]/20 transition-all font-mono tracking-widest"
               />
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider pl-0.5">
+              <label className="text-[11px] font-bold text-warm-muted uppercase tracking-wider font-mono pl-0.5">
                 New Password
               </label>
               <div className="relative">
@@ -144,7 +142,7 @@ export default function ForgotPasswordPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-3 pr-10 py-2.5 border border-warm-border bg-white rounded-xl text-[12.5px] text-warm-text placeholder-warm-muted/50 focus:outline-none focus:border-brand-indigo focus:ring-1 focus:ring-ring transition-all"
+                  className="w-full pl-3.5 pr-10 py-2.5 border border-warm-border bg-white rounded-xl text-[13px] text-warm-text placeholder:text-warm-muted/50 focus:outline-none focus:border-[#FF5A1F] focus:ring-2 focus:ring-[#FF5A1F]/20 transition-all font-sans"
                 />
                 <button
                   type="button"
@@ -159,16 +157,13 @@ export default function ForgotPasswordPage() {
             <button
               type="submit"
               disabled={loading || !isLoaded}
-              className="w-full py-2.5 mt-2 rounded-xl bg-primary hover:opacity-90 active:opacity-100 text-primary-foreground text-[12.5px] font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              className="w-full py-2.5 mt-2 rounded-xl bg-[#FF5A1F] hover:opacity-90 active:opacity-100 text-white text-[13px] font-bold shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              {loading ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : null}
-              Reset Password
+              {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+              Update Password &amp; Sign In
             </button>
           </form>
         )}
-
       </div>
     </AuthLayout>
   );

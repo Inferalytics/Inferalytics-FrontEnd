@@ -99,9 +99,9 @@ export default function SignUpPage() {
         {/* Phase 1: Input Profile Fields */}
         {!pendingVerification ? (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <div className="grid grid-cols-2 gap-3.5">
+            <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider pl-0.5">
+                <label className="text-[11px] font-bold text-warm-muted uppercase tracking-wider font-mono pl-0.5">
                   First Name
                 </label>
                 <input
@@ -110,11 +110,11 @@ export default function SignUpPage() {
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   placeholder="Robert"
-                  className="w-full px-3 py-2.5 border border-warm-border bg-white rounded-xl text-[12.5px] text-warm-text placeholder-warm-muted/50 focus:outline-none focus:border-brand-indigo focus:ring-1 focus:ring-ring transition-all"
+                  className="w-full px-3.5 py-2.5 border border-warm-border bg-white rounded-xl text-[13px] text-warm-text placeholder:text-warm-muted/50 focus:outline-none focus:border-[#FF5A1F] focus:ring-2 focus:ring-[#FF5A1F]/20 transition-all font-sans"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider pl-0.5">
+                <label className="text-[11px] font-bold text-warm-muted uppercase tracking-wider font-mono pl-0.5">
                   Last Name
                 </label>
                 <input
@@ -122,15 +122,15 @@ export default function SignUpPage() {
                   required
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
-                  placeholder="M."
-                  className="w-full px-3 py-2.5 border border-warm-border bg-white rounded-xl text-[12.5px] text-warm-text placeholder-warm-muted/50 focus:outline-none focus:border-brand-indigo focus:ring-1 focus:ring-ring transition-all"
+                  placeholder="Smith"
+                  className="w-full px-3.5 py-2.5 border border-warm-border bg-white rounded-xl text-[13px] text-warm-text placeholder:text-warm-muted/50 focus:outline-none focus:border-[#FF5A1F] focus:ring-2 focus:ring-[#FF5A1F]/20 transition-all font-sans"
                 />
               </div>
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider pl-0.5">
-                Email Address
+              <label className="text-[11px] font-bold text-warm-muted uppercase tracking-wider font-mono pl-0.5">
+                Work Email
               </label>
               <input
                 type="email"
@@ -138,12 +138,12 @@ export default function SignUpPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="robert@company.com"
-                className="w-full px-3 py-2.5 border border-warm-border bg-white rounded-xl text-[12.5px] text-warm-text placeholder-warm-muted/50 focus:outline-none focus:border-brand-indigo focus:ring-1 focus:ring-ring transition-all"
+                className="w-full px-3.5 py-2.5 border border-warm-border bg-white rounded-xl text-[13px] text-warm-text placeholder:text-warm-muted/50 focus:outline-none focus:border-[#FF5A1F] focus:ring-2 focus:ring-[#FF5A1F]/20 transition-all font-sans"
               />
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider pl-0.5">
+              <label className="text-[11px] font-bold text-warm-muted uppercase tracking-wider font-mono pl-0.5">
                 Password
               </label>
               <div className="relative">
@@ -152,8 +152,8 @@ export default function SignUpPage() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="*********"
-                  className="w-full pl-3 pr-10 py-2.5 border border-warm-border bg-white rounded-xl text-[12.5px] text-warm-text placeholder-warm-muted/50 focus:outline-none focus:border-brand-indigo focus:ring-1 focus:ring-ring transition-all"
+                  placeholder="••••••••"
+                  className="w-full pl-3.5 pr-10 py-2.5 border border-warm-border bg-white rounded-xl text-[13px] text-warm-text placeholder:text-warm-muted/50 focus:outline-none focus:border-[#FF5A1F] focus:ring-2 focus:ring-[#FF5A1F]/20 transition-all font-sans"
                 />
                 <button
                   type="button"
@@ -168,63 +168,58 @@ export default function SignUpPage() {
             <button
               type="submit"
               disabled={loading || !isLoaded}
-              className="w-full py-2.5 mt-2 rounded-xl bg-primary hover:opacity-90 active:opacity-100 text-primary-foreground text-[12.5px] font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              className="w-full py-2.5 mt-2 rounded-xl bg-[#FF5A1F] hover:opacity-90 active:opacity-100 text-white text-[13px] font-bold shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
               {loading ? (
                 <RefreshCw className="h-4 w-4 animate-spin" />
               ) : null}
-              Register Workspace
+              Create Account
             </button>
           </form>
         ) : (
-          /* Phase 2: Input Email OTP Verification Code */
-          <form onSubmit={handleVerify} className="flex flex-col gap-4.5">
-            <div className="flex flex-col gap-2">
-              <label className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wider text-center">
-                6-Digit Verification Code
+          /* Phase 2: Enter Verification Code */
+          <form onSubmit={handleVerify} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold text-warm-muted uppercase tracking-wider font-mono pl-0.5">
+                Verification Code
               </label>
-              <div className="flex items-center justify-center gap-2 bg-white border border-warm-border rounded-xl p-3 focus-within:border-brand-indigo focus-within:ring-1 focus-within:ring-ring transition-all">
-                <Mail className="h-4 w-4 text-warm-muted shrink-0" />
+              <div className="relative">
                 <input
                   type="text"
-                  maxLength={6}
                   required
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   placeholder="123456"
-                  className="w-full max-w-[120px] text-center font-mono font-bold tracking-[0.3em] text-[15px] bg-transparent border-none outline-none focus:ring-0 text-warm-text placeholder-warm-muted/40"
+                  className="w-full pl-3.5 pr-10 py-2.5 border border-warm-border bg-white rounded-xl text-[13px] text-warm-text placeholder:text-warm-muted/50 focus:outline-none focus:border-[#FF5A1F] focus:ring-2 focus:ring-[#FF5A1F]/20 transition-all font-mono tracking-widest"
                 />
+                <Mail className="h-4 w-4 text-warm-muted absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
 
             <button
               type="submit"
               disabled={loading || !isLoaded}
-              className="w-full py-2.5 rounded-xl bg-primary hover:opacity-90 active:opacity-100 text-primary-foreground text-[12.5px] font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              className="w-full py-2.5 mt-2 rounded-xl bg-[#FF5A1F] hover:opacity-90 active:opacity-100 text-white text-[13px] font-bold shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
               {loading ? (
                 <RefreshCw className="h-4 w-4 animate-spin" />
               ) : null}
-              Confirm Verification
+              Verify &amp; Enter Workspace
             </button>
 
             <button
               type="button"
-              onClick={() => {
-                setError('');
-                setPendingVerification(false);
-              }}
-              className="w-full py-1.5 rounded-xl hover:bg-secondary text-[11.5px] text-brand-indigo font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              onClick={() => setPendingVerification(false)}
+              className="w-full py-2 text-[12px] text-warm-muted hover:text-warm-text transition-colors flex items-center justify-center gap-1 cursor-pointer font-medium"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to registration
+              <ArrowLeft className="h-3.5 w-3.5" /> Change Email
             </button>
           </form>
         )}
 
-        <div className="text-[12.5px] text-warm-muted border-t border-warm-border/50 pt-5">
+        <div className="text-[12.5px] text-warm-muted border-t border-warm-border/60 pt-5">
           Already have an account?{' '}
-          <Link to="/sign-in" className="text-brand-indigo font-bold hover:underline">
+          <Link to="/sign-in" className="text-[#FF5A1F] font-bold hover:underline">
             Sign in
           </Link>
         </div>

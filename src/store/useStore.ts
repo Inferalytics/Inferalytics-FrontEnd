@@ -1,5 +1,16 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+// The persisted store was previously corrupted by a storage adapter that
+// didn't serialize through createJSONStorage — localStorage ended up holding
+// the literal string "[object Object]" instead of JSON. Clear that one-time
+// so rehydration doesn't throw on JSON.parse and silently reset to defaults.
+try {
+  const raw = localStorage.getItem('inferalytics-store');
+  if (raw && (raw.startsWith('[object') || raw === 'undefined')) {
+    localStorage.removeItem('inferalytics-store');
+  }
+} catch { /* ignore */ }
 import { GlobalState, Batch, Message, Relationship, DimensionCard, Scenario, ModelType, WorldModel } from '../types';
 import type { ForecastScenariosResponse } from '../types/api';
 import api from '../api';
@@ -85,6 +96,259 @@ const INITIAL_DIMENSIONS = (screen: number): DimensionCard[] => {
 
 const INITIAL_SCENARIOS: Scenario[] = [];
 
+export function sortPeriodsChronologically(periods: string[]): string[] {
+  return [...periods].sort((a, b) => {
+    const parse = (str: string) => {
+      const clean = str.trim().replace(/[_]/g, ' ');
+      // Match Q1 2020, Q1_2020, 2020 Q1, 2020_Q1, Q1-2020
+      const qMatch1 = clean.match(/^Q([1-4])\s*[-/]?\s*(\d{4})$/i);
+      if (qMatch1) return parseInt(qMatch1[2], 10) * 10 + parseInt(qMatch1[1], 10);
+      
+      const qMatch2 = clean.match(/^(\d{4})\s*[-/]?\s*Q([1-4])$/i);
+      if (qMatch2) return parseInt(qMatch2[1], 10) * 10 + parseInt(qMatch2[2], 10);
+
+      // Match 4-digit year e.g. "2020"
+      const yrMatch = clean.match(/^(\d{4})$/);
+      if (yrMatch) return parseInt(yrMatch[1], 10) * 10;
+
+      // Match months like Jan 2020 or 2020-01
+      const d = Date.parse(clean);
+      if (!isNaN(d)) return d;
+
+      return NaN;
+    };
+
+    const valA = parse(a);
+    const valB = parse(b);
+
+    if (!isNaN(valA) && !isNaN(valB)) {
+      return valA - valB;
+    }
+    return a.localeCompare(b, undefined, { numeric: true });
+  });
+}
+
+export function buildVisualTableFromContent(
+  content: any[],
+  fileName: string = 'Dataset'
+): import('../types').VisualTableWorkspaceState {
+  if (!Array.isArray(content) || content.length === 0) {
+    return {
+      years: { historical: [], projected: [] },
+      growthMultiplier: 1.0,
+      activeScenarioName: 'Ready for Data Model',
+      rows: []
+    };
+  }
+
+  const firstItem = content[0];
+  const keys = Object.keys(firstItem);
+
+  // Check if wide table where columns are years/periods (e.g. '2020', '2021', '2022', 'Q1_2022', etc.)
+  const yearRegex = /^(19|20)\d{2}$|^Q[1-4][_ -]?\d{2,4}$/i;
+  const rawTimeCols = keys.filter(k => yearRegex.test(k.trim()));
+
+  if (rawTimeCols.length >= 2) {
+    const timeCols = sortPeriodsChronologically(rawTimeCols);
+    // Wide table format: column headers are time periods
+    const textCols = keys.filter(k => !timeCols.includes(k));
+    const nameCol = textCols.find(k => ['item', 'name', 'metric', 'indicator', 'category', 'segment', 'row', 'department', 'region'].includes(k.toLowerCase())) || textCols[0] || keys[0];
+    const sectionCol = textCols.find(k => ['section', 'group', 'type', 'macro_category', 'category'].includes(k.toLowerCase()) && k !== nameCol);
+
+    const midPoint = Math.max(1, Math.floor(timeCols.length * 0.6));
+    const historical = timeCols.slice(0, midPoint);
+    const projected = timeCols.slice(midPoint);
+
+    const isCurrency = nameCol.toLowerCase().includes('revenue') || nameCol.toLowerCase().includes('cost') || nameCol.toLowerCase().includes('sales') || nameCol.toLowerCase().includes('amount') || nameCol.toLowerCase().includes('price');
+
+    const rows: import('../types').TableRowItem[] = content.map((row, idx) => {
+      const values: Record<string, number> = {};
+      timeCols.forEach(tc => {
+        const parsed = typeof row[tc] === 'number' ? row[tc] : parseFloat(String(row[tc]).replace(/[^0-9.-]/g, ''));
+        values[tc] = isNaN(parsed) ? 0 : parsed;
+      });
+
+      const rowName = String(row[nameCol] ?? `Metric ${idx + 1}`);
+      const sectionName = sectionCol ? String(row[sectionCol] || 'Core Model') : (fileName.replace(/\.csv$/i, '') || 'Active Data Model');
+
+      return {
+        id: `row_${idx}`,
+        name: rowName,
+        section: sectionName,
+        unit: isCurrency ? '$' : '',
+        isCurrency: isCurrency,
+        values
+      };
+    });
+
+    return {
+      years: { historical, projected },
+      growthMultiplier: 1.0,
+      activeScenarioName: `${fileName.replace(/\.csv$/i, '')} Baseline`,
+      rows
+    };
+  }
+
+  // Transactional / Long table format (e.g. Period, Sales, Region, Category)
+  const periodCol = keys.find(k => ['period', 'quarter', 'year', 'date', 'time', 'month'].includes(k.toLowerCase()));
+  const numCols = keys.filter(k => typeof firstItem[k] === 'number' || (!isNaN(Number(firstItem[k])) && k !== periodCol));
+  const catCols = keys.filter(k => k !== periodCol && !numCols.includes(k));
+
+  let uniquePeriods: string[] = [];
+  if (periodCol) {
+    const rawPeriods = Array.from(new Set(content.map(r => String(r[periodCol])))).filter(Boolean);
+    uniquePeriods = sortPeriodsChronologically(rawPeriods);
+  } else {
+    uniquePeriods = ['Q1 2024', 'Q2 2024', 'Q3 2024', 'Q4 2024'];
+  }
+
+  const cleanPeriods = uniquePeriods.map(p => p.replace('_', ' '));
+  let historical: string[] = [];
+  let projected: string[] = [];
+
+  if (cleanPeriods.length <= 4) {
+    historical = [...cleanPeriods];
+    const lastP = cleanPeriods[cleanPeriods.length - 1] || 'Q4 2024';
+    const qMatch = lastP.match(/Q([1-4])[\s_]?(\d{4})/i);
+    if (qMatch) {
+      let q = parseInt(qMatch[1]);
+      let yr = parseInt(qMatch[2]);
+      for (let i = 0; i < 4; i++) {
+        q++;
+        if (q > 4) { q = 1; yr++; }
+        projected.push(`Q${q} ${yr}`);
+      }
+    } else {
+      const yrMatch = lastP.match(/\d{4}/);
+      let baseYear = yrMatch ? parseInt(yrMatch[0]) : 2024;
+      for (let i = 1; i <= 4; i++) {
+        projected.push(String(baseYear + i));
+      }
+    }
+  } else {
+    const splitIdx = Math.max(1, Math.floor(cleanPeriods.length * 0.7));
+    historical = cleanPeriods.slice(0, splitIdx);
+    projected = cleanPeriods.slice(splitIdx);
+  }
+
+  const primaryNumCol = numCols[0] || 'Value';
+  const numColLower = primaryNumCol.toLowerCase();
+  const isNonCurrency = ['visit', 'patient', 'count', 'headcount', 'volume', 'qty', 'unit', 'hour', 'case', 'bed', 'user', 'session'].some(k => numColLower.includes(k));
+  const isCurrency = !isNonCurrency && (['sales', 'rev', 'price', 'cost', 'spend', 'amount', 'profit', 'margin', 'dollar', 'ebit', 'fee', '$'].some(k => numColLower.includes(k)) || numCols.length === 0);
+
+  const rows: import('../types').TableRowItem[] = [];
+
+  const primaryCatCol = catCols.find(c => ['category', 'segment', 'product', 'item', 'group', 'region'].includes(c.toLowerCase())) || catCols[0];
+  const secondaryCatCol = catCols.find(c => c !== primaryCatCol);
+
+  if (primaryCatCol) {
+    const uniqueCats = Array.from(new Set(content.map(r => String(r[primaryCatCol])))).filter(Boolean);
+    uniqueCats.forEach((catVal, cIdx) => {
+      const catRows = content.filter(r => String(r[primaryCatCol]) === catVal);
+      const values: Record<string, number> = {};
+
+      historical.forEach((pClean, pIdx) => {
+        const rawP = uniquePeriods[pIdx] || pClean;
+        const matching = catRows.filter(r => periodCol ? (String(r[periodCol]) === rawP || String(r[periodCol]).replace('_', ' ') === pClean) : true);
+        const sum = matching.reduce((acc, r) => acc + (Number(r[primaryNumCol]) || 0), 0);
+        values[pClean] = sum;
+      });
+
+      const lastHistVal = values[historical[historical.length - 1]] || 1000;
+      const firstHistVal = values[historical[0]] || lastHistVal;
+      const cagr = historical.length > 1 && firstHistVal > 0 ? Math.pow(lastHistVal / firstHistVal, 1 / (historical.length - 1)) - 1 : 0.05;
+      const safeGrowth = Math.max(-0.2, Math.min(0.3, isNaN(cagr) ? 0.05 : cagr));
+
+      projected.forEach((pProj, projIdx) => {
+        const projectedVal = lastHistVal * Math.pow(1 + safeGrowth, projIdx + 1);
+        values[pProj] = parseFloat(projectedVal.toFixed(1));
+      });
+
+      rows.push({
+        id: `cat_${cIdx}`,
+        name: catVal,
+        section: `${primaryCatCol.charAt(0).toUpperCase() + primaryCatCol.slice(1)} Breakdown (${primaryNumCol})`,
+        unit: isCurrency ? '$' : '',
+        isCurrency: isCurrency,
+        values
+      });
+    });
+  }
+
+  if (secondaryCatCol) {
+    const uniqueSec = Array.from(new Set(content.map(r => String(r[secondaryCatCol])))).filter(Boolean);
+    uniqueSec.forEach((secVal, sIdx) => {
+      const secRows = content.filter(r => String(r[secondaryCatCol]) === secVal);
+      const values: Record<string, number> = {};
+
+      historical.forEach((pClean, pIdx) => {
+        const rawP = uniquePeriods[pIdx] || pClean;
+        const matching = secRows.filter(r => periodCol ? (String(r[periodCol]) === rawP || String(r[periodCol]).replace('_', ' ') === pClean) : true);
+        const sum = matching.reduce((acc, r) => acc + (Number(r[primaryNumCol]) || 0), 0);
+        values[pClean] = sum;
+      });
+
+      const lastHistVal = values[historical[historical.length - 1]] || 1000;
+      projected.forEach((pProj, projIdx) => {
+        values[pProj] = parseFloat((lastHistVal * Math.pow(1.04, projIdx + 1)).toFixed(1));
+      });
+
+      rows.push({
+        id: `sec_${sIdx}`,
+        name: secVal,
+        section: `${secondaryCatCol.charAt(0).toUpperCase() + secondaryCatCol.slice(1)} Performance (${primaryNumCol})`,
+        unit: isCurrency ? '$' : '',
+        isCurrency: isCurrency,
+        values
+      });
+    });
+  }
+
+  if (!primaryCatCol && numCols.length > 0) {
+    numCols.forEach((nCol, nIdx) => {
+      const values: Record<string, number> = {};
+      historical.forEach((pClean, pIdx) => {
+        const rawP = uniquePeriods[pIdx] || pClean;
+        const matching = content.filter(r => periodCol ? (String(r[periodCol]) === rawP || String(r[periodCol]).replace('_', ' ') === pClean) : true);
+        const sum = matching.reduce((acc, r) => acc + (Number(r[nCol]) || 0), 0);
+        values[pClean] = sum;
+      });
+
+      const isColCurrency = !['visit', 'patient', 'count', 'headcount', 'volume', 'qty', 'unit'].some(k => nCol.toLowerCase().includes(k));
+      const lastHistVal = values[historical[historical.length - 1]] || 1000;
+      projected.forEach((pProj, projIdx) => {
+        values[pProj] = parseFloat((lastHistVal * Math.pow(1.05, projIdx + 1)).toFixed(1));
+      });
+
+      rows.push({
+        id: `num_${nIdx}`,
+        name: nCol.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        section: `${fileName.replace(/\.csv$/i, '')} Metrics`,
+        unit: isColCurrency ? '$' : '',
+        isCurrency: isColCurrency,
+        values
+      });
+    });
+  }
+
+  return {
+    years: { historical, projected },
+    growthMultiplier: 1.0,
+    activeScenarioName: `${fileName.replace(/\.csv$/i, '')} Baseline`,
+    rows
+  };
+}
+
+const INITIAL_VISUAL_TABLE: import('../types').VisualTableWorkspaceState = {
+  years: {
+    historical: [],
+    projected: []
+  },
+  growthMultiplier: 1.0,
+  activeScenarioName: 'Ready for Data Model',
+  rows: []
+};
+
 const INITIAL_WORKSPACE_METRICS: { name: string; value: string; delta: string; dir: 'up' | 'down' | 'flat' }[] = [];
 
 export const useStore = create<GlobalState>()(persist((set, get) => ({
@@ -142,10 +406,145 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
     set({ forecastScenarios: sorted, perBatchForecastScenarios });
   },
   clearForecastScenarios: () => set({ forecastScenarios: [] }),
+  scenarioCompare: null,
+  perBatchScenarioCompare: {} as Record<string, import('../types/api').ScenarioCompareResponse>,
+  setScenarioCompare: (data) => {
+    const batchId = get().activeBatchId;
+    const perBatchScenarioCompare = data && batchId
+      ? { ...get().perBatchScenarioCompare, [batchId]: data }
+      : get().perBatchScenarioCompare;
+    set({ scenarioCompare: data, perBatchScenarioCompare });
+  },
   worldModels: [],
   selectedProvenanceMetric: null,
   provenanceConversations: INITIAL_PROVENANCE_CONVERSATIONS,
   workspaceMetrics: INITIAL_WORKSPACE_METRICS,
+
+  // Per-Batch Storage Mappings
+  perBatchVisualTables: {} as Record<string, import('../types').VisualTableWorkspaceState>,
+  perBatchWorkspaceTables: {} as Record<string, import('../types/api').WorkspaceTable | null>,
+  perBatchSetups: {} as Record<string, SetupState>,
+  perBatchGrowthRates: {} as Record<string, GrowthRate[]>,
+  perBatchDimensions: {} as Record<string, DimensionCard[]>,
+  perBatchWorldModels: {} as Record<string, import('../types/api').WorldModel[]>,
+
+  // Visual Table Workspace State & Methods
+  visualTable: INITIAL_VISUAL_TABLE,
+
+  updateTableCell: (rowId: string, year: string, value: number) => {
+    const current = get().visualTable;
+    const updatedRows = current.rows.map(r => {
+      if (r.id === rowId) {
+        return {
+          ...r,
+          values: {
+            ...r.values,
+            [year]: value
+          }
+        };
+      }
+      return r;
+    });
+    const newVisualTable = { ...current, rows: updatedRows };
+    const batchId = get().activeBatchId;
+    const perBatchVisualTables = batchId
+      ? { ...get().perBatchVisualTables, [batchId]: newVisualTable }
+      : get().perBatchVisualTables;
+    set({
+      visualTable: newVisualTable,
+      perBatchVisualTables,
+    });
+  },
+
+  applyTableWhatIf: (growthDeltaPct: number, scenarioLabel?: string) => {
+    const current = get().visualTable;
+    const baseMultiplier = 1 + (growthDeltaPct / 100);
+    const projectedYears = current.years.projected;
+    const historicalYears = current.years.historical;
+    const lastHistYear = historicalYears[historicalYears.length - 1];
+
+    const updatedRows = current.rows.map(row => {
+      const lastHistVal = lastHistYear ? (row.values[lastHistYear] ?? 100) : 100;
+      const newValues = { ...row.values };
+
+      projectedYears.forEach((yr, idx) => {
+        const baseProjected = lastHistVal * Math.pow(1.04, idx + 1);
+        const compoundFactor = Math.pow(baseMultiplier, (idx + 1) * 0.4);
+        newValues[yr] = parseFloat((baseProjected * compoundFactor).toFixed(1));
+      });
+
+      return {
+        ...row,
+        values: newValues
+      };
+    });
+
+    const activeScenario = scenarioLabel || (growthDeltaPct === 0 ? 'Baseline Model' : `What-If: ${growthDeltaPct > 0 ? '+' : ''}${growthDeltaPct}% Growth Assumption`);
+    const newVisualTable = {
+      ...current,
+      rows: updatedRows,
+      growthMultiplier: baseMultiplier,
+      activeScenarioName: activeScenario
+    };
+    const batchId = get().activeBatchId;
+    const perBatchVisualTables = batchId
+      ? { ...get().perBatchVisualTables, [batchId]: newVisualTable }
+      : get().perBatchVisualTables;
+
+    set({
+      visualTable: newVisualTable,
+      perBatchVisualTables,
+    });
+  },
+
+  setVisualTable: (table: import('../types').VisualTableWorkspaceState) => {
+    const batchId = get().activeBatchId;
+    const perBatchVisualTables = batchId
+      ? { ...get().perBatchVisualTables, [batchId]: table }
+      : get().perBatchVisualTables;
+    set({ visualTable: table, perBatchVisualTables });
+  },
+
+  resetTableData: () => {
+    const batchId = get().activeBatchId;
+    const perBatchVisualTables = batchId
+      ? { ...get().perBatchVisualTables, [batchId]: INITIAL_VISUAL_TABLE }
+      : get().perBatchVisualTables;
+    set({
+      visualTable: INITIAL_VISUAL_TABLE,
+      perBatchVisualTables,
+    });
+  },
+
+  addTableRow: (row: import('../types').TableRowItem) => {
+    const current = get().visualTable;
+    const newVisualTable = {
+      ...current,
+      rows: [...current.rows, row]
+    };
+    const batchId = get().activeBatchId;
+    const perBatchVisualTables = batchId
+      ? { ...get().perBatchVisualTables, [batchId]: newVisualTable }
+      : get().perBatchVisualTables;
+    set({
+      visualTable: newVisualTable,
+      perBatchVisualTables,
+    });
+  },
+
+  // Conversational Workspace Table from Backend (FRONTEND_INTEGRATION)
+  workspaceTable: null,
+  setWorkspaceTable: (table: import('../types/api').WorkspaceTable | null) => {
+    const batchId = get().activeBatchId;
+    const perBatchWorkspaceTables = batchId
+      ? { ...get().perBatchWorkspaceTables, [batchId]: table }
+      : get().perBatchWorkspaceTables;
+    set({ workspaceTable: table, perBatchWorkspaceTables });
+  },
+  tableWorkspaceViewMode: 'grid',
+  setTableWorkspaceViewMode: (mode: 'grid' | 'world_model' | 'compare') => {
+    set({ tableWorkspaceViewMode: mode });
+  },
 
   setScreen: (screen: number) => {
     set({
@@ -159,64 +558,91 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
     const state = get();
     const isSameBatch = state.activeBatchId === id;
 
-    // Save current conversation under the current batch id before switching
+    // Save current active batch data under state.activeBatchId before switching
     const savedConvos = { ...state.perBatchConversations };
+    const savedForecasts = { ...state.perBatchForecasts };
+    const savedForecastScenarios = { ...state.perBatchForecastScenarios };
+    const savedScenarioCompare = { ...state.perBatchScenarioCompare };
+    const savedVisualTables = { ...state.perBatchVisualTables };
+    const savedWorkspaceTables = { ...state.perBatchWorkspaceTables };
+    const savedSetups = { ...state.perBatchSetups };
+    const savedGrowthRates = { ...state.perBatchGrowthRates };
+    const savedDimensions = { ...state.perBatchDimensions };
+    const savedWorldModels = { ...state.perBatchWorldModels };
+
     if (!isSameBatch && state.activeBatchId) {
-      savedConvos[state.activeBatchId] = state.conversation.filter(m => !m.isTyping).slice(-30);
+      const curId = state.activeBatchId;
+      savedConvos[curId] = state.conversation.filter(m => !m.isTyping).slice(-30);
+      if (state.latestForecast) savedForecasts[curId] = state.latestForecast;
+      if (state.forecastScenarios.length > 0) savedForecastScenarios[curId] = state.forecastScenarios;
+      if (state.scenarioCompare) savedScenarioCompare[curId] = state.scenarioCompare;
+      savedVisualTables[curId] = state.visualTable;
+      savedWorkspaceTables[curId] = state.workspaceTable;
+      savedSetups[curId] = state.setup;
+      savedGrowthRates[curId] = state.growthRates;
+      savedDimensions[curId] = state.dimensions;
+      savedWorldModels[curId] = state.worldModels.filter(w => w.batch_id === curId || !w.batch_id);
     }
-    // Restore conversation for the target batch (or start fresh)
+
+    // When restoring for the new batch:
+    // - If same batch: keep current state
+    // - If target batch has saved data: use saved
+    // - If new/unknown batch: use INITIAL but DON'T flash — keep current as placeholder until syncBackendState resolves
     const restoredConv = (!isSameBatch && savedConvos[id])
       ? savedConvos[id]
       : (isSameBatch ? state.conversation : INITIAL_CONVERSATION);
-
-    // Save & restore forecast per batch
-    const savedForecasts = { ...state.perBatchForecasts };
-    if (!isSameBatch && state.activeBatchId && state.latestForecast) {
-      savedForecasts[state.activeBatchId] = state.latestForecast;
-    }
     const restoredForecast = (!isSameBatch && savedForecasts[id]) ? savedForecasts[id] : (isSameBatch ? state.latestForecast : null);
-
-    // Save & restore forecast scenarios per batch
-    const savedForecastScenarios = { ...state.perBatchForecastScenarios };
-    if (!isSameBatch && state.activeBatchId && state.forecastScenarios.length > 0) {
-      savedForecastScenarios[state.activeBatchId] = state.forecastScenarios;
-    }
     const restoredForecastScenarios = (!isSameBatch && savedForecastScenarios[id]) ? savedForecastScenarios[id] : (isSameBatch ? state.forecastScenarios : []);
+    const restoredScenarioCompare = (!isSameBatch && savedScenarioCompare[id]) ? savedScenarioCompare[id] : (isSameBatch ? state.scenarioCompare : null);
+    // For visualTable: if target batch has saved state use it, otherwise use INITIAL (don't keep old batch's data)
+    const restoredVisualTable = isSameBatch
+      ? state.visualTable
+      : (savedVisualTables[id] || INITIAL_VISUAL_TABLE);
+    const restoredWorkspaceTable = (!isSameBatch && savedWorkspaceTables[id] !== undefined) ? savedWorkspaceTables[id] : (isSameBatch ? state.workspaceTable : null);
+    const restoredSetup = (!isSameBatch && savedSetups[id]) ? savedSetups[id] : (isSameBatch ? state.setup : { focalPoint: '', timeGranularity: 'Quarter', timeRange: '', segments: [], parameters: [], sources: [] });
+    const restoredGrowthRates = (!isSameBatch && savedGrowthRates[id]) ? savedGrowthRates[id] : (isSameBatch ? state.growthRates : INITIAL_GROWTH_RATES);
+    const restoredDimensions = (!isSameBatch && savedDimensions[id]) ? savedDimensions[id] : (isSameBatch ? state.dimensions : INITIAL_DIMENSIONS(4));
+    let restoredWorldModels = (!isSameBatch && savedWorldModels[id]) ? savedWorldModels[id] : (isSameBatch ? state.worldModels : []);
+
+    if (restoredWorldModels.length === 0) {
+      try {
+        const stored = sessionStorage.getItem(`wm_batch_${id}`);
+        if (stored) restoredWorldModels = JSON.parse(stored);
+      } catch { /* ignore parse errors */ }
+    }
 
     set({
       activeBatchId: id,
+      dataBatchId: id,
       perBatchConversations: savedConvos,
       perBatchForecasts: savedForecasts,
       perBatchForecastScenarios: savedForecastScenarios,
+      perBatchScenarioCompare: savedScenarioCompare,
+      perBatchVisualTables: savedVisualTables,
+      perBatchWorkspaceTables: savedWorkspaceTables,
+      perBatchSetups: savedSetups,
+      perBatchGrowthRates: savedGrowthRates,
+      perBatchDimensions: savedDimensions,
+      perBatchWorldModels: savedWorldModels,
       batches: state.batches.map((b) => ({
         ...b,
         status: b.id === id ? 'active' : b.status === 'active' ? 'idle' : b.status
       })),
-      // Only clear batch-specific data when actually switching to a different batch
-      ...(isSameBatch ? {} : {
-        worldModels: [],
-        scenarios: [],
-        latestForecast: restoredForecast,
-        forecastScenarios: restoredForecastScenarios,
-        optimisationResult: null,
-        dataBatchId: null,
-        growthRates: INITIAL_GROWTH_RATES,
-        dimensions: INITIAL_DIMENSIONS(4),
-        relationships: INITIAL_RELATIONSHIPS,
-        setup: { focalPoint: '', timeGranularity: 'quarterly', timeRange: '', segments: [], parameters: [], sources: [] },
-        conversation: restoredConv,
-        provenanceConversations: {},
-      }),
+      worldModels: restoredWorldModels,
+      visualTable: restoredVisualTable,
+      workspaceTable: restoredWorkspaceTable,
+      setup: restoredSetup,
+      growthRates: restoredGrowthRates,
+      dimensions: restoredDimensions,
+      conversation: restoredConv,
+      latestForecast: restoredForecast,
+      forecastScenarios: restoredForecastScenarios,
+      scenarioCompare: restoredScenarioCompare,
+      optimisationResult: null,
+      scenarios: [],
+      provenanceConversations: {},
     });
-    // Restore worldModels from sessionStorage whenever they are empty — covers
-    // both page refresh (isSameBatch=true, worldModels never touched) and
-    // batch switch (isSameBatch=false, worldModels reset to [] above).
-    if (get().worldModels.length === 0) {
-      try {
-        const stored = sessionStorage.getItem(`wm_batch_${id}`);
-        if (stored) set({ worldModels: JSON.parse(stored) });
-      } catch { /* ignore parse errors */ }
-    }
+
     if (get().syncBackendState) {
       void get().syncBackendState!();
     }
@@ -321,8 +747,10 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
 
       set({
         batches: [newBatch, ...get().batches.map(b => ({ ...b, status: 'idle' as const }))],
-        activeBatchId: newBatch.id,
       });
+
+      // Crucial: Switch to the newly created batch cleanly so it starts with fresh isolated state
+      get().setActiveBatch(newBatch.id);
 
       if (get().syncBackendState) {
         void get().syncBackendState!();
@@ -386,15 +814,40 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
       // 2. Sync Populated Data & Extract Real Blueprint Metadata
       try {
         const dataRes = await api.retrieveData().catch(() => null);
+        const currentBatch = get().activeBatchId;
         if (!dataRes?.data?.records || dataRes.data.records.length === 0) {
-          // No data for this batch — reset to clean state
-          set({
-            growthRates: INITIAL_GROWTH_RATES,
-            dimensions: INITIAL_DIMENSIONS(4),
-            relationships: INITIAL_RELATIONSHIPS,
-            setup: { ...get().setup, sources: [], parameters: [], segments: [] },
-            dataBatchId: null,
-          });
+          // Only reset if local state does NOT already have loaded data
+          const existingVisualTable = get().visualTable;
+          const existingWorkspaceTable = get().workspaceTable;
+          if ((!existingVisualTable?.rows || existingVisualTable.rows.length === 0) && !existingWorkspaceTable) {
+            const cleanSetup = { ...get().setup, sources: [], parameters: [], segments: [] };
+            const perBatchVisualTables = currentBatch
+              ? { ...get().perBatchVisualTables, [currentBatch]: INITIAL_VISUAL_TABLE }
+              : get().perBatchVisualTables;
+            const perBatchWorkspaceTables = currentBatch
+              ? { ...get().perBatchWorkspaceTables, [currentBatch]: null }
+              : get().perBatchWorkspaceTables;
+            const perBatchSetups = currentBatch
+              ? { ...get().perBatchSetups, [currentBatch]: cleanSetup }
+              : get().perBatchSetups;
+            const perBatchGrowthRates = currentBatch
+              ? { ...get().perBatchGrowthRates, [currentBatch]: INITIAL_GROWTH_RATES }
+              : get().perBatchGrowthRates;
+
+            set({
+              growthRates: INITIAL_GROWTH_RATES,
+              dimensions: INITIAL_DIMENSIONS(4),
+              relationships: INITIAL_RELATIONSHIPS,
+              setup: cleanSetup,
+              dataBatchId: currentBatch || null,
+              visualTable: INITIAL_VISUAL_TABLE,
+              workspaceTable: null,
+              perBatchVisualTables,
+              perBatchWorkspaceTables,
+              perBatchSetups,
+              perBatchGrowthRates,
+            });
+          }
         }
         if (dataRes?.data?.records && dataRes.data.records.length > 0) {
           const records = dataRes.data.records;
@@ -416,6 +869,44 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
           if (Array.isArray(content) && content.length > 0) {
             const firstItem = content[0];
             const keys = Object.keys(firstItem);
+
+            // Dynamically construct real workspaceTable from the backend record data
+            const itemKey = keys.find(k => ['item', 'period', 'quarter', 'year', 'date', 'region', 'segment', 'metric', 'indicator', 'name'].includes(k.toLowerCase())) || keys[0];
+            const valueKeys = keys.filter(k => k !== itemKey);
+
+            const realCols: import('../types/api').WorkspaceTableColumn[] = [
+              { id: 'item', name: itemKey.charAt(0).toUpperCase() + itemKey.slice(1), type: 'text' },
+              ...valueKeys.map(k => ({
+                id: k,
+                name: k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                type: (typeof firstItem[k] === 'number' ? 'number' : typeof firstItem[k] === 'boolean' ? 'boolean' : 'text') as any,
+              }))
+            ];
+
+            const existingTable = get().workspaceTable;
+            const extraColumns = (existingTable?.columns || []).filter(c => 
+              c.id.startsWith('scenario') || c.id.startsWith('forecast') || c.id.startsWith('what_if') || c.id.startsWith('target') || c.id.startsWith('custom')
+            );
+
+            // Merge extra columns without duplicates
+            const mergedCols = [...realCols, ...extraColumns.filter(ec => !realCols.some(rc => rc.id === ec.id))];
+
+            const realRows = content.map((r: any, idx: number) => {
+              const baseRow: any = {
+                id: `rec-${idx}`,
+                item: String(r[itemKey] ?? `Record ${idx + 1}`),
+                ...r,
+              };
+              const existingRow = existingTable?.rows?.find(er => er.id === `rec-${idx}` || er.item === baseRow.item);
+              if (existingRow) {
+                extraColumns.forEach(ec => {
+                  if (existingRow[ec.id] !== undefined) {
+                    baseRow[ec.id] = existingRow[ec.id];
+                  }
+                });
+              }
+              return baseRow;
+            });
 
             // Extract real metrics (numeric columns) and real segments (text/categorical columns)
             const realParameters: string[] = [];
@@ -481,6 +972,9 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
               };
             });
 
+            // Dynamically construct visual table model from real dataset records
+            const dynamicVisualTable = buildVisualTableFromContent(content, latestRecord.file_name);
+
             updatedSetup = {
               ...updatedSetup,
               focalPoint: focalPointName,
@@ -489,10 +983,44 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
               parameters: realParameters.length > 0 ? realParameters : get().setup.parameters,
             };
 
+            const updatedWsTable = mergedCols.length > 0 ? {
+              columns: mergedCols,
+              rows: realRows,
+              version: get().workspaceTable?.version ? get().workspaceTable!.version + 1 : 1,
+              updated_at: new Date().toISOString(),
+            } : get().workspaceTable;
+
+            const existingVt = get().visualTable;
+            // Do NOT overwrite if: (a) scenario is locked from optimization, OR (b) existing rows were uploaded and backend returned same/empty content
+            const isScenarioLocked = existingVt?.scenarioLocked === true;
+            const existingHasMoreRows = existingVt?.rows?.length > 0 && dynamicVisualTable.rows.length === 0;
+            const finalVisualTable = (isScenarioLocked || existingHasMoreRows)
+              ? existingVt  // keep current scenario / uploaded data
+              : (dynamicVisualTable.rows.length > 0 ? dynamicVisualTable : existingVt);
+
+            const perBatchVisualTables = currentBatch
+              ? { ...get().perBatchVisualTables, [currentBatch]: finalVisualTable }
+              : get().perBatchVisualTables;
+            const perBatchWorkspaceTables = currentBatch
+              ? { ...get().perBatchWorkspaceTables, [currentBatch]: updatedWsTable }
+              : get().perBatchWorkspaceTables;
+            const perBatchSetups = currentBatch
+              ? { ...get().perBatchSetups, [currentBatch]: updatedSetup }
+              : get().perBatchSetups;
+            const perBatchGrowthRates = currentBatch
+              ? { ...get().perBatchGrowthRates, [currentBatch]: realGrowthRates }
+              : get().perBatchGrowthRates;
+
             set({
               setup: updatedSetup,
               growthRates: realGrowthRates.length > 0 ? realGrowthRates : get().growthRates,
-              dataBatchId: get().activeBatchId,
+              dataBatchId: currentBatch || get().activeBatchId,
+              visualTable: finalVisualTable,
+              workspaceTable: updatedWsTable,
+              perBatchVisualTables,
+              perBatchWorkspaceTables,
+              perBatchSetups,
+              perBatchGrowthRates,
             });
           } else {
             set({ setup: updatedSetup });
@@ -636,6 +1164,57 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
         target: targetPct,
       },
     });
+
+    // ── Sync Optimized Scenario Values into Visual Table Projected Columns ──
+    const currentVt = get().visualTable;
+    if (currentVt && currentVt.rows.length > 0) {
+      const optMultiplier = 1 + (finalPct / 100);
+      const projYears = currentVt.years.projected;
+      const histYears = currentVt.years.historical;
+      const lastHistYr = histYears[histYears.length - 1];
+
+      const allWmCats = wm.world_model_tree?.macro_categories?.flatMap(m => m.categories || []) || [];
+
+      const updatedVtRows = currentVt.rows.map(row => {
+        const lastHistVal = lastHistYr ? (row.values[lastHistYr] ?? 100) : 100;
+        const matchCat = allWmCats.find(c => 
+          c.label.toLowerCase() === row.name.toLowerCase() || 
+          row.name.toLowerCase().includes(c.label.toLowerCase()) || 
+          c.label.toLowerCase().includes(row.name.toLowerCase())
+        );
+
+        const rowMultiplier = matchCat && matchCat.original_value > 0
+          ? (matchCat.final_value / matchCat.original_value)
+          : optMultiplier;
+
+        const newVals = { ...row.values };
+        projYears.forEach((yr, idx) => {
+          const baseVal = lastHistVal * Math.pow(1.04, idx + 1);
+          const compoundStep = Math.pow(rowMultiplier, (idx + 1) * 0.4);
+          newVals[yr] = parseFloat((baseVal * compoundStep).toFixed(1));
+        });
+
+        return {
+          ...row,
+          values: newVals
+        };
+      });
+
+      const newVt = {
+        ...currentVt,
+        rows: updatedVtRows,
+        growthMultiplier: optMultiplier,
+        activeScenarioName: wm.scenario_label || `Optimized Run (+${finalPct.toFixed(1)}%)`,
+        scenarioLocked: true,  // prevent syncBackendState from overwriting these scenario values
+      };
+
+      const batchId = get().activeBatchId;
+      const perBatchVisualTables = batchId
+        ? { ...get().perBatchVisualTables, [batchId]: newVt }
+        : get().perBatchVisualTables;
+
+      set({ visualTable: newVt, perBatchVisualTables });
+    }
   },
 
   toggleScenarioChecked: (id: string) => {
@@ -1011,11 +1590,9 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
     leftSidebarOpen: state.leftSidebarOpen,
     rightSidebarOpen: state.rightSidebarOpen,
     egrTarget:       state.egrTarget,
-    // Per-batch forecast (replaces single latestForecast — batch-isolated)
+    // Per-batch forecast (batch-isolated)
     perBatchForecasts: state.perBatchForecasts,
     perBatchForecastScenarios: state.perBatchForecastScenarios,
-    // Active conversation (last 30 non-typing messages)
-    conversation: state.conversation.filter(m => !m.isTyping).slice(-30),
     // Per-batch conversation history (last 30 msgs each batch)
     perBatchConversations: Object.fromEntries(
       Object.entries(state.perBatchConversations).map(([bId, msgs]) => [
@@ -1023,8 +1600,22 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
         msgs.filter(m => !m.isTyping).slice(-30),
       ])
     ),
+    // Per-batch visual & workspace tables (strictly isolated per batch)
+    perBatchVisualTables: state.perBatchVisualTables,
+    perBatchWorkspaceTables: state.perBatchWorkspaceTables,
+    perBatchSetups: state.perBatchSetups,
+    perBatchGrowthRates: state.perBatchGrowthRates,
+    perBatchDimensions: state.perBatchDimensions,
+    // Active table and view states (instantly restored on reload)
+    visualTable: state.visualTable,
+    workspaceTable: state.workspaceTable,
+    setup: state.setup,
+    growthRates: state.growthRates,
+    dimensions: state.dimensions,
+    conversation: state.conversation.filter(m => !m.isTyping).slice(-30),
+    tableWorkspaceViewMode: state.tableWorkspaceViewMode,
   }),
-  storage: {
+  storage: createJSONStorage(() => ({
     getItem: (name) => {
       try { return localStorage.getItem(name); } catch { return null; }
     },
@@ -1037,14 +1628,24 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
     removeItem: (name) => {
       try { localStorage.removeItem(name); } catch { /* ignore */ }
     },
-  },
-  // After Zustand rehydrates from localStorage, immediately restore worldModels
-  // from sessionStorage. This runs before any component mounts, so the page
-  // never sees an empty worldModels on refresh.
+  })),
+  // After Zustand rehydrates from localStorage, restore the active batch's specific state
   onRehydrateStorage: () => (state) => {
     if (!state || !state.activeBatchId) return;
     const id = state.activeBatchId;
-    // Restore worldModels from sessionStorage
+    
+    // Restore per-batch state for the active batch
+    state.visualTable = state.perBatchVisualTables?.[id] || INITIAL_VISUAL_TABLE;
+    state.workspaceTable = state.perBatchWorkspaceTables?.[id] || null;
+    state.setup = state.perBatchSetups?.[id] || { focalPoint: '', timeGranularity: 'Quarter', timeRange: '', segments: [], parameters: [], sources: [] };
+    state.growthRates = state.perBatchGrowthRates?.[id] || INITIAL_GROWTH_RATES;
+    state.dimensions = state.perBatchDimensions?.[id] || INITIAL_DIMENSIONS(4);
+    state.conversation = state.perBatchConversations?.[id] || INITIAL_CONVERSATION;
+    state.latestForecast = state.perBatchForecasts?.[id] || null;
+    state.forecastScenarios = state.perBatchForecastScenarios?.[id] || [];
+
+    // Restore worldModels from sessionStorage for this specific batch ONLY
+    state.worldModels = [];
     try {
       const stored = sessionStorage.getItem(`wm_batch_${id}`);
       if (stored) {
@@ -1057,13 +1658,6 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
         });
       }
     } catch { /* ignore */ }
-    // Restore latestForecast and forecastScenarios for the active batch
-    if (state.perBatchForecasts?.[id]) {
-      state.latestForecast = state.perBatchForecasts[id];
-    }
-    if (state.perBatchForecastScenarios?.[id]) {
-      state.forecastScenarios = state.perBatchForecastScenarios[id];
-    }
   },
 }
 ));

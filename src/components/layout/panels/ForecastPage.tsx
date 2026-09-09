@@ -244,8 +244,9 @@ function buildCompareFromScenarios(scenarios: ForecastScenarioResult[]): Scenari
 function CompareView() {
   const activeBatchId     = useStore(s => s.activeBatchId);
   const forecastScenarios = useStore(s => s.forecastScenarios);
-  const [data, setData]   = useState<ScenarioCompareResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const data               = useStore(s => s.scenarioCompare);
+  const setScenarioCompare = useStore(s => s.setScenarioCompare);
+  const [loading, setLoading] = useState(!data);
 
   const fetchCompare = useCallback(async () => {
     setLoading(true);
@@ -259,16 +260,16 @@ function CompareView() {
     if (compareResult.status === 'fulfilled' &&
         compareResult.value.success &&
         compareResult.value.scenarios?.length > 0) {
-      setData(compareResult.value);
+      setScenarioCompare(compareResult.value);
     } else if (foreResult.status === 'fulfilled' &&
                foreResult.value.has_results &&
                foreResult.value.scenarios?.length > 0) {
-      setData(buildCompareFromScenarios(foreResult.value.scenarios));
+      setScenarioCompare(buildCompareFromScenarios(foreResult.value.scenarios));
     } else {
-      setData(null);
+      setScenarioCompare(null);
     }
     setLoading(false);
-  }, [activeBatchId]);
+  }, [activeBatchId, setScenarioCompare]);
 
   useEffect(() => { void fetchCompare(); }, [fetchCompare]);
   useEffect(() => {

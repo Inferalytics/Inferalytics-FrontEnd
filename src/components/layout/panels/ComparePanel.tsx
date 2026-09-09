@@ -115,16 +115,19 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
   };
 
   return (
-    <div className="flex flex-col gap-5 animate-float-up w-full max-w-[960px] mx-auto pt-4">
+    <div className="flex flex-col gap-6 animate-float-up w-full max-w-[1080px] mx-auto pt-2 pb-12 font-sans select-none">
 
       {/* ── Back + header ─────────────────────────────────────── */}
       <div className="flex items-center justify-between">
-        <button onClick={() => navigate('/dashboard/workspace/scenarios')}
-          className="flex items-center gap-1.5 bg-white/70 hover:bg-white border border-warm-border px-3 py-1.5 rounded-full shadow-sm text-[11.5px] font-bold text-brand-indigo transition-all cursor-pointer">
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to Scenarios
+        <button
+          onClick={() => navigate('/dashboard/scenarios')}
+          className="flex items-center gap-1.5 bg-white hover:bg-[#FAF9F7] border border-warm-border px-3.5 py-1.5 rounded-xl shadow-2xs text-[12px] font-bold text-warm-text transition-all cursor-pointer"
+        >
+          <ArrowLeft className="h-4 w-4 text-[#FF5A1F]" />
+          <span>Back to Scenarios</span>
         </button>
-        <div className="flex items-center gap-2 text-[10.5px] font-mono text-warm-muted">
-          <span className="bg-white border border-warm-border px-2.5 py-1 rounded-full shadow-sm">
+        <div className="flex items-center gap-2 text-[11px] font-mono text-warm-muted">
+          <span className="bg-white border border-warm-border px-3 py-1 rounded-xl shadow-2xs">
             {model} · {egrTarget}% target · {now}
           </span>
         </div>
@@ -133,36 +136,38 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
       {/* ── Score banner ──────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Scenario A score */}
-        <div className={`bg-white border rounded-2xl p-4 flex flex-col items-center gap-2 shadow-card ${
-          aWins > bWins ? 'border-brand-indigo ring-2 ring-brand-indigo/15' : 'border-warm-border'
+        <div className={`bg-white border rounded-2xl p-5 flex flex-col items-center gap-2 shadow-card transition-all ${
+          aWins > bWins ? 'border-[#FF5A1F] ring-2 ring-[#FF5A1F]/20' : 'border-warm-border'
         }`}>
           <div className="flex items-center gap-2">
-            <div className="h-2.5 w-2.5 rounded-full bg-brand-indigo" />
-            <span className="text-[12px] font-bold text-warm-text truncate max-w-[140px]" title={scenarioA.label}>{scenarioA.label}</span>
+            <div className="h-2.5 w-2.5 rounded-full bg-[#FF5A1F]" />
+            <span className="text-[13px] font-bold text-warm-text truncate max-w-[160px]" title={scenarioA.label}>{scenarioA.label}</span>
           </div>
-          <span className="text-[36px] font-extrabold text-brand-indigo leading-none">{aWins}</span>
-          <span className="text-[10px] text-warm-muted">metrics won</span>
+          <span className="text-[40px] font-extrabold text-[#FF5A1F] leading-none font-mono">{aWins}</span>
+          <span className="text-[11px] text-warm-muted font-mono">metrics won</span>
         </div>
 
         {/* Verdict */}
-        <div className="bg-sage-light border border-sage-border rounded-2xl p-4 flex flex-col items-center justify-center gap-2 shadow-card">
-          <Trophy className="h-6 w-6 text-sage" />
-          <span className="text-[13px] font-extrabold text-sage truncate max-w-full" title={winnerLabel}>{winnerLabel} Wins</span>
-          <span className="text-[10px] text-warm-muted text-center leading-relaxed">
+        <div className="bg-[#EBF4E8] border border-[#C8E4C0] rounded-2xl p-5 flex flex-col items-center justify-center gap-2 shadow-card">
+          <div className="h-10 w-10 rounded-xl bg-white border border-[#C8E4C0] flex items-center justify-center">
+            <Trophy className="h-5 w-5 text-[#2C6E25]" />
+          </div>
+          <span className="text-[14px] font-bold text-[#2C6E25] truncate max-w-full" title={winnerLabel}>{winnerLabel} Wins</span>
+          <span className="text-[11px] text-[#2C6E25]/80 text-center leading-relaxed font-mono">
             {Math.max(bWins, aWins)} of {ROWS.length} metrics
           </span>
         </div>
 
         {/* Scenario B score */}
-        <div className={`bg-white border rounded-2xl p-4 flex flex-col items-center gap-2 shadow-card ${
-          bWins > aWins ? 'border-sage ring-2 ring-sage/20' : 'border-warm-border'
+        <div className={`bg-white border rounded-2xl p-5 flex flex-col items-center gap-2 shadow-card transition-all ${
+          bWins > aWins ? 'border-[#2C6E25] ring-2 ring-[#2C6E25]/20' : 'border-warm-border'
         }`}>
           <div className="flex items-center gap-2">
-            <div className="h-2.5 w-2.5 rounded-full bg-sage" />
-            <span className="text-[12px] font-bold text-warm-text truncate max-w-[140px]" title={scenarioB.label}>{scenarioB.label}</span>
+            <div className="h-2.5 w-2.5 rounded-full bg-[#2C6E25]" />
+            <span className="text-[13px] font-bold text-warm-text truncate max-w-[160px]" title={scenarioB.label}>{scenarioB.label}</span>
           </div>
-          <span className="text-[36px] font-extrabold text-sage leading-none">{bWins}</span>
-          <span className="text-[10px] text-warm-muted">metrics won</span>
+          <span className="text-[40px] font-extrabold text-[#2C6E25] leading-none font-mono">{bWins}</span>
+          <span className="text-[11px] text-warm-muted font-mono">metrics won</span>
         </div>
       </div>
 
@@ -171,93 +176,93 @@ export default function ComparePanel({ triggerToast }: ComparePanelProps) {
         <div className="w-full overflow-x-auto no-scrollbar">
           <div className="min-w-[768px]">
             {/* Column headers */}
-        <div className="grid grid-cols-[1.6fr_1fr_1fr_0.8fr] bg-warm-bg/60 border-b border-warm-border text-[10px] font-bold text-warm-muted uppercase tracking-wide font-sans">
-          <div className="px-4 py-2.5 flex justify-between items-center w-full">
-            <span>Metric</span>
-            <span className="text-[8px] text-brand-indigo font-normal normal-case tracking-normal">click row for provenance</span>
-          </div>
-          <div className="px-3 py-2.5 flex items-center gap-1.5 truncate">
-            <div className="h-2 w-2 rounded-full bg-brand-indigo shrink-0" /> {scenarioA.label}
-          </div>
-          <div className="px-3 py-2.5 flex items-center gap-1.5 truncate">
-            <div className="h-2 w-2 rounded-full bg-sage shrink-0" /> {scenarioB.label}
-          </div>
-          <div className="px-3 py-2.5">Δ Delta</div>
-        </div>
+            <div className="grid grid-cols-[1.6fr_1fr_1fr_0.8fr] bg-[#FAF9F7] border-b border-warm-border text-[11px] font-bold text-warm-muted uppercase tracking-wide font-sans">
+              <div className="px-5 py-3 flex justify-between items-center w-full">
+                <span>Metric</span>
+                <span className="text-[9.5px] text-[#FF5A1F] font-semibold normal-case tracking-normal">click row for provenance</span>
+              </div>
+              <div className="px-4 py-3 flex items-center gap-2 truncate">
+                <div className="h-2 w-2 rounded-full bg-[#FF5A1F] shrink-0" /> {scenarioA.label}
+              </div>
+              <div className="px-4 py-3 flex items-center gap-2 truncate">
+                <div className="h-2 w-2 rounded-full bg-[#2C6E25] shrink-0" /> {scenarioB.label}
+              </div>
+              <div className="px-4 py-3">Δ Delta</div>
+            </div>
 
-        {ROWS.map((row) => {
-          const isSelected = selectedProvenanceMetric?.toLowerCase() === row.metric.toLowerCase();
-          return (
-            <div key={row.metric}
-              onClick={() => setSelectedProvenanceMetric(row.metric)}
-              className={`grid grid-cols-[1.6fr_1fr_1fr_0.8fr] border-b border-warm-border/30 hover:bg-lavender/5 hover:text-brand-indigo transition-colors items-center cursor-pointer ${
-                isSelected ? 'bg-lavender/10 font-medium border-l-2 border-brand-indigo' : ''
-              }`}>
-              <div className="px-4 py-3 flex items-center gap-2">
-                {row.winner === 'tie'
-                  ? <Minus className="h-3.5 w-3.5 text-warm-muted shrink-0" />
-                  : row.winner === 'b'
-                    ? <Check className="h-3.5 w-3.5 text-sage shrink-0" />
-                    : <AlertTriangle className="h-3.5 w-3.5 text-amber-warm shrink-0" />
-                }
-                <span className="text-[12px] font-semibold text-warm-text">{row.metric}</span>
-              </div>
-              <div className={`px-3 py-3 font-mono text-[12px] ${row.winner === 'a' ? 'font-bold text-brand-indigo' : 'text-warm-muted'}`}>
-                {row.a}
-              </div>
-              <div className={`px-3 py-3 font-mono text-[12px] ${row.winner === 'b' ? 'font-bold text-sage bg-sage-light/20' : 'text-warm-muted'}`}>
-                {row.b}
-              </div>
-              <div className="px-3 py-3 text-[11px]">
-                <DeltaBadge trend={row.trend} delta={row.delta} />
-              </div>
-            </div>
-          );
-        })}
+            {ROWS.map((row) => {
+              const isSelected = selectedProvenanceMetric?.toLowerCase() === row.metric.toLowerCase();
+              return (
+                <div key={row.metric}
+                  onClick={() => setSelectedProvenanceMetric(row.metric)}
+                  className={`grid grid-cols-[1.6fr_1fr_1fr_0.8fr] border-b border-warm-border/30 hover:bg-[#FAF9F7] transition-colors items-center cursor-pointer ${
+                    isSelected ? 'bg-[#FFF2EE]/50 font-medium border-l-3 border-[#FF5A1F]' : ''
+                  }`}>
+                  <div className="px-5 py-3.5 flex items-center gap-2.5">
+                    {row.winner === 'tie'
+                      ? <Minus className="h-4 w-4 text-warm-muted shrink-0" />
+                      : row.winner === 'b'
+                        ? <Check className="h-4 w-4 text-[#2C6E25] shrink-0" />
+                        : <AlertTriangle className="h-4 w-4 text-[#FF5A1F] shrink-0" />
+                    }
+                    <span className="text-[13px] font-bold text-warm-text">{row.metric}</span>
+                  </div>
+                  <div className={`px-4 py-3.5 font-mono text-[13px] tabular-nums ${row.winner === 'a' ? 'font-bold text-[#FF5A1F]' : 'text-warm-muted'}`}>
+                    {row.a}
+                  </div>
+                  <div className={`px-4 py-3.5 font-mono text-[13px] tabular-nums ${row.winner === 'b' ? 'font-bold text-[#2C6E25]' : 'text-warm-muted'}`}>
+                    {row.b}
+                  </div>
+                  <div className="px-4 py-3.5 text-[12px] font-mono tabular-nums">
+                    <DeltaBadge trend={row.trend} delta={row.delta} />
+                  </div>
+                </div>
+              );
+            })}
 
-        {/* Real sparkline trajectory row — from each scenario's actual sparkData */}
-        <div className="grid grid-cols-[1.6fr_1fr_1fr_0.8fr] items-center bg-warm-bg/5">
-          <div className="px-4 py-3 flex items-center gap-2">
-            <TrendingUp className="h-3.5 w-3.5 text-brand-indigo shrink-0" />
-            <span className="text-[12px] font-semibold text-warm-text">Trajectory</span>
-          </div>
-          <div className="px-3 py-2">
-            <div className="h-10 bg-secondary/30 rounded-lg border border-warm-border/40 p-1">
-              <svg className="w-full h-full" viewBox="0 0 100 28" preserveAspectRatio="none">
-                <path d={sparklinePath(scenarioA.sparkData)} fill="none" stroke="#6E69BE" strokeWidth="2.2" />
-              </svg>
+            {/* Real sparkline trajectory row — from each scenario's actual sparkData */}
+            <div className="grid grid-cols-[1.6fr_1fr_1fr_0.8fr] items-center bg-[#FAF9F7]/40">
+              <div className="px-5 py-3.5 flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-[#FF5A1F] shrink-0" />
+                <span className="text-[13px] font-bold text-warm-text">Trajectory</span>
+              </div>
+              <div className="px-4 py-2">
+                <div className="h-10 bg-white rounded-xl border border-warm-border p-1">
+                  <svg className="w-full h-full" viewBox="0 0 100 28" preserveAspectRatio="none">
+                    <path d={sparklinePath(scenarioA.sparkData)} fill="none" stroke="#FF5A1F" strokeWidth="2.2" />
+                  </svg>
+                </div>
+              </div>
+              <div className="px-4 py-2">
+                <div className="h-10 bg-white rounded-xl border border-warm-border p-1">
+                  <svg className="w-full h-full" viewBox="0 0 100 28" preserveAspectRatio="none">
+                    <path d={sparklinePath(scenarioB.sparkData)} fill="none" stroke="#2C6E25" strokeWidth="2.2" />
+                  </svg>
+                </div>
+              </div>
+              <div className="px-4 py-3.5 text-[11px] font-mono text-warm-muted">stored run history</div>
             </div>
           </div>
-          <div className="px-3 py-2">
-            <div className="h-10 bg-sage-light/20 rounded-lg border border-sage-border/40 p-1">
-              <svg className="w-full h-full" viewBox="0 0 100 28" preserveAspectRatio="none">
-                <path d={sparklinePath(scenarioB.sparkData)} fill="none" stroke="#8EA885" strokeWidth="2.2" />
-              </svg>
-            </div>
-          </div>
-          <div className="px-3 py-3 text-[10.5px] text-warm-muted">from stored run history</div>
         </div>
-       </div>
       </div>
-     </div>
 
       {/* ── Footer actions ────────────────────────────────────── */}
-      <div className="flex items-center justify-between bg-white border border-warm-border rounded-2xl px-5 py-3.5 shadow-card">
+      <div className="flex items-center justify-between bg-white border border-warm-border rounded-2xl px-6 py-4 shadow-card">
         <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-sage" />
-          <span className="text-[12px] font-semibold text-sage truncate max-w-[420px]">
+          <Sparkles className="h-4 w-4 text-[#2C6E25]" />
+          <span className="text-[12.5px] font-bold text-[#2C6E25] truncate max-w-[420px]">
             {winnerLabel} outperforms on {Math.max(bWins, aWins)}/{ROWS.length} metrics.
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <button onClick={exportCSV}
-            className="px-3 py-1.5 border border-warm-border bg-white hover:bg-secondary rounded-xl text-[12px] font-semibold text-warm-text transition-colors cursor-pointer flex items-center gap-1.5">
+            className="px-3.5 py-2 border border-warm-border bg-white hover:bg-[#FAF9F7] rounded-xl text-[12px] font-semibold text-warm-text transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs">
             <Download className="h-3.5 w-3.5 text-warm-muted" /> Export CSV
           </button>
           <button
             onClick={() => triggerToast(`${bWins >= aWins ? scenarioB.label : scenarioA.label} locked in.`)}
-            className="px-4 py-1.5 bg-sage hover:bg-sage/90 text-white rounded-xl text-[12px] font-bold shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer">
-            <Check className="h-3.5 w-3.5" /> Lock {bWins >= aWins ? scenarioB.label : scenarioA.label}
+            className="px-4 py-2 bg-[#2C6E25] hover:opacity-90 text-white rounded-xl text-[12.5px] font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer">
+            <Check className="h-4 w-4" /> Lock {bWins >= aWins ? scenarioB.label : scenarioA.label}
           </button>
         </div>
       </div>

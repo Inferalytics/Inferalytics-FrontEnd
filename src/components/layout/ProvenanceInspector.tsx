@@ -5,13 +5,107 @@ import { useNavigate } from 'react-router-dom';
 import { Message } from '../../types';
 
 const renderFormattedText = (content: string) => {
-  if (!content) return '';
-  const parts = content.split('**');
-  return parts.map((part, index) => {
-    if (index % 2 === 1) {
-      return <strong key={index} className="font-bold text-warm-text">{part}</strong>;
+  if (!content) return null;
+  const rawLines = content.split('\n');
+
+  const processInline = (text: string) => {
+    const boldParts = text.split(/\*\*(.*?)\*\*/g);
+    return boldParts.map((bPart, bIdx) => {
+      if (bIdx % 2 === 1) {
+        return <strong key={`b-${bIdx}`} className="font-bold text-warm-text">{bPart}</strong>;
+      }
+
+      const codeParts = bPart.split(/`(.*?)`/g);
+      return codeParts.map((cPart, cIdx) => {
+        if (cIdx % 2 === 1) {
+          return (
+            <code key={`c-${cIdx}`} className="px-1.5 py-0.5 mx-0.5 rounded bg-warm-bg border border-warm-border text-[11px] font-mono text-brand-indigo font-semibold">
+              {cPart}
+            </code>
+          );
+        }
+        return cPart;
+      });
+    });
+  };
+
+  const blocks: Array<
+    | { type: 'table'; headers: string[]; rows: string[][] }
+    | { type: 'h1'; text: string }
+    | { type: 'bullet'; text: string }
+    | { type: 'paragraph'; text: string }
+    | { type: 'spacer' }
+  > = [];
+
+  let i = 0;
+  while (i < rawLines.length) {
+    const trimmed = rawLines[i].trim();
+
+    if (trimmed.startsWith('|') && trimmed.endsWith('|') && i + 1 < rawLines.length) {
+      const nextTrimmed = rawLines[i + 1].trim();
+      if (nextTrimmed.startsWith('|') && nextTrimmed.includes('---')) {
+        const headerCells = trimmed.split('|').slice(1, -1).map(c => c.trim());
+        const tableRows: string[][] = [];
+        i += 2;
+        while (i < rawLines.length && rawLines[i].trim().startsWith('|') && rawLines[i].trim().endsWith('|')) {
+          tableRows.push(rawLines[i].trim().split('|').slice(1, -1).map(c => c.trim()));
+          i++;
+        }
+        blocks.push({ type: 'table', headers: headerCells, rows: tableRows });
+        continue;
+      }
     }
-    return part;
+
+    if (trimmed.startsWith('# ') || trimmed.startsWith('## ')) {
+      blocks.push({ type: 'h1', text: trimmed.replace(/^#+\s*/, '') });
+    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      blocks.push({ type: 'bullet', text: trimmed.slice(2) });
+    } else if (!trimmed) {
+      blocks.push({ type: 'spacer' });
+    } else {
+      blocks.push({ type: 'paragraph', text: rawLines[i] });
+    }
+    i++;
+  }
+
+  return blocks.map((block, bIdx) => {
+    if (block.type === 'spacer') return <div key={`sp-${bIdx}`} className="h-1" />;
+    if (block.type === 'h1') return <h4 key={`h1-${bIdx}`} className="text-[13px] font-bold text-warm-text mt-2 mb-1">{processInline(block.text)}</h4>;
+    if (block.type === 'bullet') {
+      return (
+        <div key={`b-${bIdx}`} className="flex items-start gap-2 my-0.5 pl-1">
+          <span className="text-brand-indigo font-bold select-none text-[12px] leading-tight">•</span>
+          <div className="flex-1 text-[12px] leading-relaxed text-warm-text/90">{processInline(block.text)}</div>
+        </div>
+      );
+    }
+    if (block.type === 'table') {
+      return (
+        <div key={`tbl-${bIdx}`} className="my-2 overflow-x-auto rounded-xl border border-warm-border bg-white shadow-2xs">
+          <table className="w-full text-left border-collapse text-[11px] font-sans">
+            <thead>
+              <tr className="bg-[#FAF9F7] border-b border-warm-border text-[10px] font-mono uppercase text-warm-text font-bold">
+                {block.headers.map((h, hIdx) => (
+                  <th key={hIdx} className={`py-2 px-2.5 ${hIdx > 0 ? 'text-right' : 'text-left'}`}>{processInline(h)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-warm-border/30">
+              {block.rows.map((row, rIdx) => (
+                <tr key={rIdx} className="hover:bg-[#FFF2EE]/25 transition-colors">
+                  {row.map((cell, cIdx) => (
+                    <td key={cIdx} className={`py-1.5 px-2.5 text-warm-text ${cIdx > 0 ? 'text-right font-mono font-medium' : 'text-left font-sans'}`}>
+                      {processInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    return <div key={`p-${bIdx}`} className="text-[12px] leading-relaxed text-warm-text">{processInline(block.text)}</div>;
   });
 };
 

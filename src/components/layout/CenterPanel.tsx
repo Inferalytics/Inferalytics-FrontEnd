@@ -73,8 +73,12 @@ export default function CenterPanel() {
     setTimeout(() => setToastMsg(null), 3000);
   };
 
+  const isConversation = !tab || tab === 'conversation';
+
   return (
-    <div className="flex-1 h-[calc(100vh-48px)] relative bg-warm-gradient overflow-auto select-none no-scrollbar">
+    <div className={`flex-1 h-full min-h-0 relative bg-warm-gradient select-none ${
+      isConversation ? 'overflow-hidden p-3 sm:p-4 md:p-5 flex flex-col' : 'overflow-y-auto custom-scrollbar p-4 sm:p-6'
+    }`}>
       {toastMsg && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-brand-indigo text-white font-sans text-[12.5px] px-4 py-2.5 rounded-xl shadow-lg border border-lavender/30 flex items-center gap-2 animate-float-up">
           <Check className="h-4 w-4 text-peach" />
@@ -82,15 +86,15 @@ export default function CenterPanel() {
         </div>
       )}
 
-      <div className="relative z-10 p-6 min-h-full flex flex-col justify-between">
-        {(!tab || tab === 'conversation') && <TalkPanel triggerToast={triggerToast} />}
-        {tab === 'blueprint' && <SetupPanel />}
-        {tab === 'ecr-build' && <BuildPanel />}
-        {tab === 'ecr-batch' && <BatchPanel />}
-        {tab === 'ips-engine' && <OptimisePanel triggerToast={triggerToast} />}
+      <div className={`relative z-10 w-full ${isConversation ? 'h-full flex flex-col min-h-0' : 'min-h-full flex flex-col justify-between'}`}>
+        {isConversation && <TalkPanel triggerToast={triggerToast} />}
+        {(tab === 'dimensions' || tab === 'blueprint' || tab === 'ecr-build' || tab === 'ecr-batch') && <BuildPanel />}
+        {(tab === 'scenarios' || tab === 'ips-engine') && <OptimisePanel triggerToast={triggerToast} />}
+        {tab === 'world-model' && <WorldModelPage />}
         {tab === 'forecast' && <ForecastPage />}
         {tab === 'learning' && <LearningTab />}
-        {tab === 'world-model' && <WorldModelPage />}
+        {tab === 'batch' && <BatchPanel />}
+        {tab === 'setup' && <SetupPanel />}
       </div>
     </div>
   );

@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, Minus, Plus, Maximize2 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area, Cell,
@@ -20,7 +20,7 @@ const GREEN  = '#16A34A';
 const RED    = '#EF4444';
 
 // ── Canvas constants ──────────────────────────────────────────────────────────
-const CW = 220, CH = 122, VG = 20, MG = 40, COL = 280;
+const CW = 248, CH = 138, VG = 24, MG = 44, COL = 310;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt   = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 0 });
@@ -46,18 +46,20 @@ function computeLayout(tree: WorldModelTreeType) {
     const start = catY;
     macro.categories.forEach(cat => {
       const id = catId(macro.label, cat.label);
-      pos[id] = { x: COL * 2 + 20, y: catY };
+      pos[id] = { x: COL * 2 + 24, y: catY };
       conns.push({ fromId: macroId(macro.label), toId: id });
       catY += CH + VG;
     });
     const groupH = macro.categories.length * (CH + VG) - VG;
-    pos[macroId(macro.label)] = { x: COL + 20, y: start + groupH / 2 - CH / 2 };
+    pos[macroId(macro.label)] = { x: COL + 24, y: Math.max(0, start + groupH / 2 - CH / 2) };
     conns.push({ fromId: 'root', toId: macroId(macro.label) });
     catY += MG;
   });
-  const ys   = tree.macro_categories.map(m => pos[macroId(m.label)].y);
-  pos['root'] = { x: 20, y: (Math.min(...ys) + Math.max(...ys) + CH) / 2 - CH / 2 };
-  return { pos, conns, canvasH: Math.max(560, catY + CH + 40) };
+  const ys   = tree.macro_categories.map(m => pos[macroId(m.label)]?.y ?? 0);
+  const minY = ys.length > 0 ? Math.min(...ys) : 0;
+  const maxY = ys.length > 0 ? Math.max(...ys) : 0;
+  pos['root'] = { x: 24, y: Math.max(0, (minY + maxY) / 2) };
+  return { pos, conns, canvasH: Math.max(580, catY + CH + 40) };
 }
 
 // ── Recharts custom tooltip ────────────────────────────────────────────────────
@@ -512,25 +514,35 @@ function Modal({ data, onClose }: { data: ModalData; onClose: () => void }) {
 // ── Canvas card components ────────────────────────────────────────────────────
 function RootCard({ tree }: { tree: WorldModelTreeType }) {
   return (
-    <div className="w-full h-full flex flex-col justify-between p-3 select-none">
-      <div>
-        <div className="text-[8px] font-black uppercase tracking-widest mb-0.5" style={{ color: `${ACCENT.root}99` }}>EGR Root</div>
-        <div className="text-[13px] font-black text-warm-text leading-tight">{tree.label}</div>
+    <div className="w-full h-full flex flex-col justify-between p-3.5 select-none min-w-0 font-sans">
+      <div className="min-w-0">
+        <div className="text-[8.5px] font-black uppercase tracking-widest mb-0.5" style={{ color: `${ACCENT.root}99` }}>EGR Target Root</div>
+        <div className="text-[13.5px] font-extrabold text-warm-text leading-tight truncate">{tree.label}</div>
       </div>
-      <div>
-        <div className="mb-1.5">
-          <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase"
+      <div className="flex flex-col gap-1 min-w-0">
+        <div className="flex items-center justify-between">
+          <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider font-mono"
             style={{ backgroundColor: `${ACCENT.root}15`, color: ACCENT.root }}>NUMERIC</span>
+          <span className={`text-[9.5px] font-bold font-mono px-1.5 py-0.5 rounded-full ${tree.converged ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+            {tree.converged ? '✓ Converged' : '⚠ In Progress'}
+          </span>
         </div>
-        <div className="flex items-center gap-2">
-          <div><div className="text-[8px] text-warm-muted">Target</div>
-            <div className="text-[16px] font-black text-warm-text">{tree.target_egr_pct}</div></div>
-          <div className="text-warm-muted/40">→</div>
-          <div><div className="text-[8px] text-warm-muted">Achieved</div>
-            <div className={`text-[16px] font-black ${tree.converged ? 'text-green-600' : 'text-amber-500'}`}>
-              {tree.final_egr_pct} {tree.converged ? '✓' : '⚠'}</div></div>
+        <div className="flex items-center justify-between gap-1 pt-0.5">
+          <div>
+            <div className="text-[8px] text-warm-muted font-mono uppercase">Target</div>
+            <div className="text-[15px] font-black text-warm-text font-mono tabular-nums leading-none">{tree.target_egr_pct}</div>
+          </div>
+          <div className="text-warm-muted/40 font-mono text-[12px]">→</div>
+          <div className="text-right">
+            <div className="text-[8px] text-warm-muted font-mono uppercase">Achieved</div>
+            <div className={`text-[15px] font-black font-mono tabular-nums leading-none ${tree.converged ? 'text-green-600' : 'text-amber-500'}`}>
+              {tree.final_egr_pct}
+            </div>
+          </div>
         </div>
-        <div className="mt-1 text-[8px] text-warm-muted font-mono">{fmt(tree.original_total)} → {fmt(tree.final_total)}</div>
+        <div className="text-[8.5px] text-warm-muted font-mono truncate pt-0.5 border-t border-warm-border/30">
+          {fmt(tree.original_total)} → {fmt(tree.final_total)}
+        </div>
       </div>
     </div>
   );
@@ -538,28 +550,29 @@ function RootCard({ tree }: { tree: WorldModelTreeType }) {
 
 function MacroCard({ macro, macroField }: { macro: MacroCategory; macroField: string }) {
   return (
-    <div className="w-full h-full flex flex-col justify-between p-3 select-none">
-      <div>
-        <div className="text-[8px] font-black uppercase tracking-widest mb-0.5" style={{ color: `${ACCENT.macro}99` }}>{macroField}</div>
-        <div className="text-[13px] font-black text-warm-text leading-tight truncate">{macro.label}</div>
+    <div className="w-full h-full flex flex-col justify-between p-3.5 select-none min-w-0 font-sans">
+      <div className="min-w-0">
+        <div className="text-[8.5px] font-black uppercase tracking-widest mb-0.5" style={{ color: `${ACCENT.macro}99` }}>{macroField}</div>
+        <div className="text-[13px] font-extrabold text-warm-text leading-tight truncate">{macro.label}</div>
       </div>
-      <div>
-        <div className="mb-1.5">
-          <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase"
-            style={{ backgroundColor: `${ACCENT.macro}15`, color: ACCENT.macro }}>CATEGORICAL</span>
-        </div>
+      <div className="flex flex-col gap-1 min-w-0">
         <div className="flex items-center justify-between">
-          <div>
-            <div className={`text-[17px] font-black leading-none ${dCls(macro.delta)}`}>{macro.egr_contribution_pct}</div>
-            <div className="text-[8px] text-warm-muted mt-0.5">EGR contribution</div>
+          <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider font-mono"
+            style={{ backgroundColor: `${ACCENT.macro}15`, color: ACCENT.macro }}>CATEGORICAL</span>
+          <span className="text-[9px] text-warm-muted font-mono font-medium">{macro.categories_count} groups</span>
+        </div>
+        <div className="flex items-center justify-between gap-2 pt-0.5">
+          <div className="min-w-0">
+            <div className={`text-[16px] font-black font-mono tabular-nums leading-none ${dCls(macro.delta)}`}>{macro.egr_contribution_pct}</div>
+            <div className="text-[8px] text-warm-muted font-mono mt-0.5">EGR contribution</div>
           </div>
-          <div className="text-right">
-            <div className={`text-[12px] font-bold ${dCls(macro.delta)}`}>{macro.change_pct}</div>
-            <div className="text-[8px] text-warm-muted">{macro.categories_count} groups</div>
+          <div className="text-right min-w-0">
+            <div className={`text-[13px] font-bold font-mono tabular-nums leading-none ${dCls(macro.delta)}`}>{macro.change_pct}</div>
+            <div className="text-[8px] text-warm-muted font-mono mt-0.5">Change %</div>
           </div>
         </div>
-        <div className="mt-1.5 h-1 rounded-full bg-warm-border/30">
-          <div className="h-1 rounded-full opacity-70" style={{ width: '100%', backgroundColor: dHex(macro.delta) }} />
+        <div className="mt-0.5 h-1 rounded-full bg-warm-border/30 overflow-hidden">
+          <div className="h-1 rounded-full opacity-80" style={{ width: '100%', backgroundColor: dHex(macro.delta) }} />
         </div>
       </div>
     </div>
@@ -568,29 +581,231 @@ function MacroCard({ macro, macroField }: { macro: MacroCategory; macroField: st
 
 function CatCard({ cat, catField }: { cat: TreeCategory; catField: string }) {
   return (
-    <div className="w-full h-full flex flex-col justify-between p-3 select-none">
-      <div>
-        <div className="text-[8px] font-black uppercase tracking-widest mb-0.5" style={{ color: `${ACCENT.cat}99` }}>{catField}</div>
-        <div className="text-[13px] font-black text-warm-text leading-tight truncate">{cat.label}</div>
+    <div className="w-full h-full flex flex-col justify-between p-3.5 select-none min-w-0 font-sans">
+      <div className="min-w-0">
+        <div className="text-[8.5px] font-black uppercase tracking-widest mb-0.5" style={{ color: `${ACCENT.cat}99` }}>{catField}</div>
+        <div className="text-[13px] font-extrabold text-warm-text leading-tight truncate">{cat.label}</div>
       </div>
-      <div>
-        <div className="flex items-center gap-1.5 mb-1.5">
-          <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase"
-            style={{ backgroundColor: `${ACCENT.cat}15`, color: ACCENT.cat }}>PERIOD</span>
-          <span className="text-[8px] text-warm-muted">{cat.data_points_count} pts</span>
-        </div>
+      <div className="flex flex-col gap-1 min-w-0">
         <div className="flex items-center justify-between">
-          <div>
-            <div className={`text-[17px] font-black leading-none ${dCls(cat.delta)}`}>{cat.egr_contribution_pct}</div>
-            <div className="text-[8px] text-warm-muted mt-0.5">EGR contribution</div>
+          <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider font-mono"
+            style={{ backgroundColor: `${ACCENT.cat}15`, color: ACCENT.cat }}>PERIOD</span>
+          <span className="text-[9px] text-warm-muted font-mono font-medium">{cat.data_points_count} pts</span>
+        </div>
+        <div className="flex items-center justify-between gap-2 pt-0.5">
+          <div className="min-w-0">
+            <div className={`text-[16px] font-black font-mono tabular-nums leading-none ${dCls(cat.delta)}`}>{cat.egr_contribution_pct}</div>
+            <div className="text-[8px] text-warm-muted font-mono mt-0.5">EGR contribution</div>
           </div>
-          <div className="text-right">
-            <div className={`text-[12px] font-bold ${dCls(cat.delta)}`}>{cat.change_pct}</div>
-            <div className="text-[8px] font-mono text-warm-muted">{fmt(cat.original_value)} → {fmt(cat.final_value)}</div>
+          <div className="text-right min-w-0">
+            <div className={`text-[13px] font-bold font-mono tabular-nums leading-none ${dCls(cat.delta)}`}>{cat.change_pct}</div>
+            <div className="text-[8px] font-mono text-warm-muted mt-0.5 truncate">{fmt(cat.original_value)} → {fmt(cat.final_value)}</div>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Hover Popover Component (Crisp readable preview at any zoom level) ────────
+interface HoverNodeState {
+  type: 'root' | 'macro' | 'cat';
+  id: string;
+  rect: { top: number; left: number; width: number; height: number; right: number; bottom: number };
+  tree?: WorldModelTreeType;
+  macro?: MacroCategory;
+  cat?: TreeCategory;
+  macroField?: string;
+  catField?: string;
+}
+
+function HoverPopover({ hovered }: { hovered: HoverNodeState | null }) {
+  if (!hovered) return null;
+  const { type, rect, tree, macro, cat, macroField = 'Macro Driver', catField = 'Indicator' } = hovered;
+
+  const popoverW = 330;
+  const margin = 14;
+  let left = rect.right + margin;
+  if (left + popoverW > window.innerWidth - 20) {
+    left = Math.max(16, rect.left - popoverW - margin);
+  }
+
+  const popoverH = 260;
+  let top = rect.top + rect.height / 2 - popoverH / 2;
+  top = Math.max(16, Math.min(window.innerHeight - popoverH - 24, top));
+
+  let accentColor = ACCENT.root;
+  let title = '';
+  let badgeType = '';
+  let content: React.ReactNode = null;
+
+  if (type === 'root' && tree) {
+    accentColor = ACCENT.root;
+    title = tree.label;
+    badgeType = 'EGR Target Root';
+    content = (
+      <div className="flex flex-col gap-2.5 font-sans text-[11.5px]">
+        <div className="grid grid-cols-2 gap-2 bg-warm-bg/70 p-2.5 rounded-xl border border-warm-border/50">
+          <div>
+            <div className="text-[9px] font-mono uppercase text-warm-muted font-semibold">Target EGR</div>
+            <div className="text-[16px] font-black text-warm-text font-mono leading-tight">{tree.target_egr_pct}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-mono uppercase text-warm-muted font-semibold">Achieved EGR</div>
+            <div className={`text-[16px] font-black font-mono leading-tight ${tree.converged ? 'text-green-600' : 'text-amber-600'}`}>
+              {tree.final_egr_pct}
+            </div>
+          </div>
+          <div>
+            <div className="text-[9px] font-mono uppercase text-warm-muted font-semibold">Baseline Total</div>
+            <div className="text-[13px] font-bold text-warm-text font-mono leading-tight">${fmt(tree.original_total)}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-mono uppercase text-warm-muted font-semibold">Final Target</div>
+            <div className="text-[13px] font-black text-[#FF5A1F] font-mono leading-tight">${fmt(tree.final_total)}</div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between text-[11px] font-mono pt-1 border-t border-warm-border/40">
+          <span className="text-warm-muted">Net Shift (Delta):</span>
+          <span className="font-bold text-green-600 font-mono">
+            {tree.total_change_pct} (${fmt(tree.total_delta)})
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between text-[11px] font-mono">
+          <span className="text-warm-muted">Macro Drivers:</span>
+          <span className="font-bold text-warm-text">{tree.macro_categories.length} domain groups</span>
+        </div>
+      </div>
+    );
+  } else if (type === 'macro' && macro) {
+    accentColor = ACCENT.macro;
+    title = macro.label;
+    badgeType = macroField;
+    const delta = macro.delta;
+    content = (
+      <div className="flex flex-col gap-2.5 font-sans text-[11.5px]">
+        <div className="grid grid-cols-2 gap-2 bg-warm-bg/70 p-2.5 rounded-xl border border-warm-border/50">
+          <div>
+            <div className="text-[9px] font-mono uppercase text-warm-muted font-semibold">EGR Contribution</div>
+            <div className={`text-[17px] font-black font-mono leading-tight ${dCls(delta)}`}>{macro.egr_contribution_pct}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-mono uppercase text-warm-muted font-semibold">Variance %</div>
+            <div className={`text-[17px] font-black font-mono leading-tight ${dCls(delta)}`}>{macro.change_pct}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-mono uppercase text-warm-muted font-semibold">Baseline</div>
+            <div className="text-[13px] font-bold text-warm-text font-mono leading-tight">${fmt(macro.original_value)}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-mono uppercase text-warm-muted font-semibold">Target Value</div>
+            <div className="text-[13px] font-black text-warm-text font-mono leading-tight">${fmt(macro.final_value)}</div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between text-[11px] font-mono pt-1 border-t border-warm-border/40">
+          <span className="text-warm-muted">Nested Indicators:</span>
+          <span className="font-bold text-warm-text font-mono">{macro.categories_count} sub-indicators</span>
+        </div>
+
+        {macro.categories && macro.categories.length > 0 && (
+          <div className="flex flex-col gap-1 text-[10.5px]">
+            <span className="text-warm-muted font-mono uppercase text-[9px] font-semibold">Top Indicators:</span>
+            <div className="flex flex-wrap gap-1">
+              {macro.categories.slice(0, 3).map((c, i) => (
+                <span key={i} className="px-1.5 py-0.5 rounded bg-white border border-warm-border/60 text-warm-text font-mono text-[9.5px]">
+                  {c.label.slice(0, 14)}: <strong className="text-[#FF5A1F]">{c.egr_contribution_pct}</strong>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  } else if (type === 'cat' && cat) {
+    accentColor = ACCENT.cat;
+    title = cat.label;
+    badgeType = catField;
+    const delta = cat.delta;
+    content = (
+      <div className="flex flex-col gap-2.5 font-sans text-[11.5px]">
+        <div className="grid grid-cols-2 gap-2 bg-warm-bg/70 p-2.5 rounded-xl border border-warm-border/50">
+          <div>
+            <div className="text-[9px] font-mono uppercase text-warm-muted font-semibold">EGR Contribution</div>
+            <div className={`text-[17px] font-black font-mono leading-tight ${dCls(delta)}`}>{cat.egr_contribution_pct}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-mono uppercase text-warm-muted font-semibold">Growth Shift</div>
+            <div className={`text-[17px] font-black font-mono leading-tight ${dCls(delta)}`}>{cat.change_pct}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-mono uppercase text-warm-muted font-semibold">Baseline Value</div>
+            <div className="text-[13px] font-bold text-warm-text font-mono leading-tight">${fmt(cat.original_value)}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-mono uppercase text-warm-muted font-semibold">Target Value</div>
+            <div className="text-[13px] font-black text-warm-text font-mono leading-tight">${fmt(cat.final_value)}</div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between text-[11px] font-mono pt-1 border-t border-warm-border/40">
+          <span className="text-warm-muted">Data Points:</span>
+          <span className="font-bold text-warm-text font-mono">{cat.data_points_count || 2} periods</span>
+        </div>
+
+        <div className="flex items-center justify-between text-[11px] font-mono">
+          <span className="text-warm-muted">Net Variance:</span>
+          <span className={`font-black font-mono ${dCls(delta)}`}>
+            {delta >= 0 ? '+' : ''}${fmt(delta)}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return createPortal(
+    <div
+      className="fixed z-[9990] pointer-events-none transition-opacity duration-150 animate-fade-in select-none"
+      style={{
+        left: `${left}px`,
+        top: `${top}px`,
+        width: `${popoverW}px`,
+      }}
+    >
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-warm-border overflow-hidden">
+        {/* Accent Bar */}
+        <div className="h-1.5 w-full" style={{ backgroundColor: accentColor }} />
+        
+        {/* Header */}
+        <div className="p-3.5 pb-2.5 border-b border-warm-border/50 bg-gradient-to-b from-white to-[#FAF9F7]/50">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <span
+              className="px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-wider"
+              style={{ backgroundColor: `${accentColor}18`, color: accentColor }}
+            >
+              {badgeType}
+            </span>
+            <span className="text-[9.5px] text-warm-muted font-mono">Hover Inspection</span>
+          </div>
+          <div className="text-[14px] font-extrabold text-warm-text leading-tight truncate">
+            {title}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="p-3.5">
+          {content}
+        </div>
+
+        {/* Footer Hint */}
+        <div className="px-3.5 py-2 bg-[#FAF9F7] border-t border-warm-border/50 flex items-center justify-between text-[10px] text-warm-muted font-mono">
+          <span>💡 Click card to open deep dive modal</span>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -605,18 +820,102 @@ export default function WorldModelCanvasTree({ tree }: Props) {
   const { pos: initPos, conns, canvasH } = computeLayout(tree);
   const [positions, setPositions] = useState(initPos);
   const [zoom,      setZoom]      = useState(1);
+  const [pan,       setPan]       = useState({ x: 24, y: 24 });
   const [highlight, setHighlight] = useState<string | null>(null);
   const [modal,     setModal]     = useState<ModalData | null>(null);
   const [drag,      setDrag]      = useState<{ id: string; ox: number; oy: number } | null>(null);
-  const dragMovedRef              = useRef(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const [hoveredNode, setHoveredNode] = useState<HoverNodeState | null>(null);
+  
+  const containerRef  = useRef<HTMLDivElement>(null);
+  const dragMovedRef  = useRef(false);
+  const panStartRef   = useRef<{ startX: number; startY: number; initPanX: number; initPanY: number } | null>(null);
 
-  useEffect(() => { setPositions(computeLayout(tree).pos); }, [tree]);
+  const totalW = COL * 2 + CW + 48;
 
-  const handleMouseDown = (e: React.MouseEvent, id: string) => {
+  // Auto-fit calculations
+  const fitToView = () => {
+    if (!containerRef.current) return;
+    const { clientWidth, clientHeight } = containerRef.current;
+    if (!clientWidth || !clientHeight) return;
+
+    const padX = 28;
+    const padY = 28;
+    const availW = Math.max(100, clientWidth - padX * 2);
+    const availH = Math.max(100, clientHeight - padY * 2);
+
+    const scaleX = availW / totalW;
+    const scaleY = availH / canvasH;
+    const fitScale = Math.max(0.3, Math.min(1.0, Math.min(scaleX, scaleY)));
+
+    const scaledW = totalW * fitScale;
+    const scaledH = canvasH * fitScale;
+
+    const panX = Math.max(12, (clientWidth - scaledW) / 2);
+    const panY = Math.max(12, (clientHeight - scaledH) / 2);
+
+    setZoom(parseFloat(fitScale.toFixed(2)));
+    setPan({ x: parseFloat(panX.toFixed(1)), y: parseFloat(panY.toFixed(1)) });
+  };
+
+  // Re-layout and auto-fit on tree change or initial mount
+  useEffect(() => {
+    setPositions(computeLayout(tree).pos);
+    const timer = setTimeout(() => {
+      fitToView();
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [tree]);
+
+  // Background Canvas Panning
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.tree-node-card') || (e.target as HTMLElement).closest('.canvas-control-button')) {
+      return;
+    }
+    setIsPanning(true);
+    panStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initPanX: pan.x,
+      initPanY: pan.y,
+    };
+  };
+
+  useEffect(() => {
+    if (!isPanning) return;
+    const onMove = (e: MouseEvent) => {
+      if (!panStartRef.current) return;
+      const dx = e.clientX - panStartRef.current.startX;
+      const dy = e.clientY - panStartRef.current.startY;
+      setPan({
+        x: panStartRef.current.initPanX + dx,
+        y: panStartRef.current.initPanY + dy,
+      });
+    };
+    const onUp = () => {
+      setIsPanning(false);
+      panStartRef.current = null;
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [isPanning]);
+
+  // Card node drag repositioning
+  const handleCardMouseDown = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
     e.preventDefault();
     dragMovedRef.current = false;
     const p = positions[id];
-    setDrag({ id, ox: e.clientX / zoom - p.x, oy: e.clientY / zoom - p.y });
+    if (!p) return;
+    setDrag({
+      id,
+      ox: (e.clientX - pan.x) / zoom - p.x,
+      oy: (e.clientY - pan.y) / zoom - p.y
+    });
     setHighlight(id);
   };
 
@@ -626,14 +925,20 @@ export default function WorldModelCanvasTree({ tree }: Props) {
       dragMovedRef.current = true;
       setPositions(prev => ({
         ...prev,
-        [drag.id]: { x: Math.max(0, e.clientX / zoom - drag.ox), y: Math.max(0, e.clientY / zoom - drag.oy) },
+        [drag.id]: {
+          x: Math.max(0, (e.clientX - pan.x) / zoom - drag.ox),
+          y: Math.max(0, (e.clientY - pan.y) / zoom - drag.oy)
+        },
       }));
     };
     const onUp = () => setDrag(null);
     window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup',   onUp);
-    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-  }, [drag, zoom]);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [drag, zoom, pan]);
 
   const handleCardClick = (id: string) => {
     if (dragMovedRef.current) return;
@@ -658,92 +963,264 @@ export default function WorldModelCanvasTree({ tree }: Props) {
   }
 
   const isActive = (a: string, b: string) => highlight === a || highlight === b;
-  const totalW   = COL * 2 + CW + 40 + 20;
 
   return (
     <>
-      <div className="flex flex-col">
-        <div className="w-full overflow-x-auto no-scrollbar pb-4">
-          <div className="relative" style={{ minWidth: totalW }}>
-            {/* Zoom controls */}
-            <div className="absolute bottom-4 left-4 z-30 flex items-center gap-1 bg-white/95 border border-warm-border p-1.5 rounded-xl shadow-md select-none">
-              <button type="button" onClick={() => setZoom(z => Math.max(0.4, +(z - 0.1).toFixed(1)))}
-                className="h-6 w-6 rounded bg-warm-bg hover:bg-warm-border/30 text-warm-text font-bold text-[13px] flex items-center justify-center cursor-pointer">−</button>
-              <span className="text-[10px] font-mono font-bold text-warm-muted px-1 min-w-[36px] text-center">{Math.round(zoom * 100)}%</span>
-              <button type="button" onClick={() => setZoom(z => Math.min(1.6, +(z + 0.1).toFixed(1)))}
-                className="h-6 w-6 rounded bg-warm-bg hover:bg-warm-border/30 text-warm-text font-bold text-[13px] flex items-center justify-center cursor-pointer">+</button>
-              <button type="button" onClick={() => setZoom(1)}
-                className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase cursor-pointer"
-                style={{ backgroundColor: `${ACCENT.root}15`, color: ACCENT.root }}>Reset</button>
-            </div>
+      <div
+        ref={containerRef}
+        onMouseDown={handleCanvasMouseDown}
+        className={`w-full h-full min-h-[460px] relative overflow-hidden bg-gradient-to-br from-[#FAF9F7]/60 via-white to-[#FAF9F7]/40 select-none ${
+          isPanning ? 'cursor-grabbing' : 'cursor-grab'
+        }`}
+      >
+        {/* ── Interactive Zoom & Navigation Toolbar ── */}
+        <div className="absolute top-4 right-4 z-30 flex items-center gap-1.5 bg-white/95 backdrop-blur-md border border-warm-border p-1.5 rounded-2xl shadow-card select-none">
+          <button
+            type="button"
+            onClick={() => setZoom(z => Math.max(0.25, +(z - 0.1).toFixed(2)))}
+            className="canvas-control-button h-7 w-7 rounded-xl bg-warm-bg hover:bg-warm-border/40 text-warm-text font-bold text-sm flex items-center justify-center cursor-pointer transition-all shadow-2xs"
+            title="Zoom Out"
+          >
+            <Minus className="h-3.5 w-3.5" />
+          </button>
 
-            {/* Canvas */}
-            <div className="relative origin-top-left"
-              style={{ width: totalW, height: canvasH * zoom + 60, minHeight: 420 }}>
-              <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', width: totalW, height: canvasH, position: 'absolute', top: 0, left: 0 }}>
-                <svg className="absolute inset-0 pointer-events-none z-10 overflow-visible"
-                  style={{ width: '100%', height: '100%' }} overflow="visible">
-                  {conns.map(({ fromId, toId }, i) => {
-                    const active = isActive(fromId, toId);
-                    return (
-                      <g key={i}>
-                        <path d={connPath(fromId, toId)}
-                          stroke={active ? ACCENT.root : '#DFDCD8'} strokeWidth={active ? 2.5 : 1.5}
-                          fill="none" strokeDasharray={active ? '6 4' : '4 6'} />
-                        {positions[fromId] && <circle cx={positions[fromId].x + CW} cy={positions[fromId].y + CH / 2}
-                          r={active ? 4 : 3} fill={active ? ACCENT.root : '#C8C3BC'} />}
-                        {positions[toId] && <circle cx={positions[toId].x} cy={positions[toId].y + CH / 2}
-                          r={active ? 4 : 2.5} fill={active ? '#FFF2EE' : '#F5F3F0'}
-                          stroke={active ? ACCENT.root : '#C8C3BC'} strokeWidth={active ? 1.8 : 1.2} />}
-                      </g>
-                    );
-                  })}
-                </svg>
+          <span className="text-[11px] font-mono font-bold text-warm-text px-2 min-w-[44px] text-center tabular-nums">
+            {Math.round(zoom * 100)}%
+          </span>
 
-                {/* Root */}
-                {(() => { const id = 'root', p = positions[id], hl = highlight === id; return (
-                  <div className="absolute bg-white rounded-xl border shadow-md overflow-hidden cursor-pointer transition-all hover:shadow-lg"
-                    style={{ left: p?.x ?? 20, top: p?.y ?? 0, width: CW, height: CH, zIndex: drag?.id === id ? 50 : 20,
-                      borderColor: hl ? ACCENT.root : '#EFECE8', boxShadow: hl ? `0 0 0 2px ${ACCENT.root}30` : undefined }}
-                    onMouseDown={e => handleMouseDown(e, id)} onClick={() => handleCardClick(id)}>
-                    <div className="absolute top-0 left-0 right-0 h-0.5" style={{ backgroundColor: ACCENT.root }} />
-                    <RootCard tree={tree} />
-                  </div>
-                ); })()}
+          <button
+            type="button"
+            onClick={() => setZoom(z => Math.min(2.0, +(z + 0.1).toFixed(2)))}
+            className="canvas-control-button h-7 w-7 rounded-xl bg-warm-bg hover:bg-warm-border/40 text-warm-text font-bold text-sm flex items-center justify-center cursor-pointer transition-all shadow-2xs"
+            title="Zoom In"
+          >
+            +
+          </button>
 
-                {/* Macros */}
-                {tree.macro_categories.map(macro => { const id = macroId(macro.label), p = positions[id], hl = highlight === id; if (!p) return null; return (
-                  <div key={id} className="absolute bg-white rounded-xl border shadow-md overflow-hidden cursor-pointer transition-all hover:shadow-lg"
-                    style={{ left: p.x, top: p.y, width: CW, height: CH, zIndex: drag?.id === id ? 50 : 20,
-                      borderColor: hl ? ACCENT.macro : '#EFECE8', boxShadow: hl ? `0 0 0 2px ${ACCENT.macro}30` : undefined }}
-                    onMouseDown={e => handleMouseDown(e, id)} onClick={() => handleCardClick(id)}>
-                    <div className="absolute top-0 left-0 right-0 h-0.5" style={{ backgroundColor: ACCENT.macro }} />
-                    <MacroCard macro={macro} macroField={macroField} />
-                  </div>
-                ); })}
+          <div className="h-4 w-[1px] bg-warm-border mx-0.5" />
 
-                {/* Categories */}
-                {tree.macro_categories.flatMap(macro => macro.categories.map(cat => {
-                  const id = catId(macro.label, cat.label), p = positions[id], hl = highlight === id;
-                  if (!p) return null;
-                  return (
-                    <div key={id} className="absolute bg-white rounded-xl border shadow-md overflow-hidden cursor-pointer transition-all hover:shadow-lg"
-                      style={{ left: p.x, top: p.y, width: CW, height: CH, zIndex: drag?.id === id ? 50 : 20,
-                        borderColor: hl ? ACCENT.cat : '#EFECE8', boxShadow: hl ? `0 0 0 2px ${ACCENT.cat}30` : undefined }}
-                      onMouseDown={e => handleMouseDown(e, id)} onClick={() => handleCardClick(id)}>
-                      <div className="absolute top-0 left-0 right-0 h-0.5" style={{ backgroundColor: ACCENT.cat }} />
-                      <CatCard cat={cat} catField={catField} />
-                    </div>
-                  );
-                }))}
-              </div>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={fitToView}
+            className="canvas-control-button flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10.5px] font-bold text-[#FF5A1F] bg-[#FFF2EE] hover:bg-[#FFE6DC] border border-[#FFD4C5] cursor-pointer transition-all shadow-2xs"
+            title="Fit all nodes into view"
+          >
+            <Maximize2 className="h-3 w-3" />
+            <span>Fit View</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setZoom(1.0);
+              setPan({ x: 24, y: 24 });
+            }}
+            className="canvas-control-button px-2 py-1 rounded-xl text-[10.5px] font-semibold text-warm-muted hover:text-warm-text hover:bg-warm-bg cursor-pointer transition-all"
+            title="Reset to 100%"
+          >
+            100%
+          </button>
         </div>
-        <p className="text-center text-[10px] text-warm-muted/60 mt-1">
-          Drag to reposition · click any card to view details
-        </p>
+
+        {/* ── Bottom Help / Interaction Badge ── */}
+        <div className="absolute bottom-3 left-4 z-20 pointer-events-none flex items-center gap-2 bg-white/90 backdrop-blur-xs px-3 py-1.5 rounded-full border border-warm-border/60 text-[10.5px] text-warm-muted font-sans shadow-xs">
+          <span className="h-2 w-2 rounded-full bg-[#FF5A1F]" />
+          <span>Fitted to view · Drag canvas to pan · Click card for deep dive</span>
+        </div>
+
+        {/* ── Scalable Transformed Tree Canvas ── */}
+        <div
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: '0 0',
+            width: totalW,
+            height: canvasH,
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            transition: isPanning || drag ? 'none' : 'transform 0.15s ease-out',
+          }}
+        >
+          {/* SVG Connection Lines */}
+          <svg
+            className="absolute inset-0 pointer-events-none z-10 overflow-visible"
+            style={{ width: '100%', height: '100%' }}
+            overflow="visible"
+          >
+            {conns.map(({ fromId, toId }, i) => {
+              const active = isActive(fromId, toId);
+              return (
+                <g key={i}>
+                  <path
+                    d={connPath(fromId, toId)}
+                    stroke={active ? ACCENT.root : '#DFDCD8'}
+                    strokeWidth={active ? 2.5 : 1.5}
+                    fill="none"
+                    strokeDasharray={active ? '6 4' : '4 6'}
+                  />
+                  {positions[fromId] && (
+                    <circle
+                      cx={positions[fromId].x + CW}
+                      cy={positions[fromId].y + CH / 2}
+                      r={active ? 4 : 3}
+                      fill={active ? ACCENT.root : '#C8C3BC'}
+                    />
+                  )}
+                  {positions[toId] && (
+                    <circle
+                      cx={positions[toId].x}
+                      cy={positions[toId].y + CH / 2}
+                      r={active ? 4 : 2.5}
+                      fill={active ? '#FFF2EE' : '#F5F3F0'}
+                      stroke={active ? ACCENT.root : '#C8C3BC'}
+                      strokeWidth={active ? 1.8 : 1.2}
+                    />
+                  )}
+                </g>
+              );
+            })}
+          </svg>
+
+          {/* Root Card */}
+          {(() => {
+            const id = 'root';
+            const p = positions[id];
+            const hl = highlight === id;
+            return (
+              <div
+                className="tree-node-card absolute bg-white rounded-2xl border shadow-card overflow-hidden cursor-pointer transition-all hover:shadow-lg"
+                style={{
+                  left: p?.x ?? 20,
+                  top: p?.y ?? 0,
+                  width: CW,
+                  height: CH,
+                  zIndex: drag?.id === id ? 50 : 20,
+                  borderColor: hl ? ACCENT.root : '#EFECE8',
+                  boxShadow: hl ? `0 0 0 2px ${ACCENT.root}30, 0 8px 24px -4px rgba(0,0,0,0.12)` : undefined
+                }}
+                onMouseEnter={e => {
+                  if (isPanning || drag || modal) return;
+                  setHoveredNode({
+                    type: 'root',
+                    id: 'root',
+                    rect: e.currentTarget.getBoundingClientRect(),
+                    tree,
+                  });
+                }}
+                onMouseLeave={() => setHoveredNode(null)}
+                onMouseDown={e => {
+                  setHoveredNode(null);
+                  handleCardMouseDown(e, id);
+                }}
+                onClick={() => {
+                  setHoveredNode(null);
+                  handleCardClick(id);
+                }}
+              >
+                <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: ACCENT.root }} />
+                <RootCard tree={tree} />
+              </div>
+            );
+          })()}
+
+          {/* Macro Category Cards */}
+          {tree.macro_categories.map(macro => {
+            const id = macroId(macro.label);
+            const p = positions[id];
+            const hl = highlight === id;
+            if (!p) return null;
+            return (
+              <div
+                key={id}
+                className="tree-node-card absolute bg-white rounded-2xl border shadow-card overflow-hidden cursor-pointer transition-all hover:shadow-lg"
+                style={{
+                  left: p.x,
+                  top: p.y,
+                  width: CW,
+                  height: CH,
+                  zIndex: drag?.id === id ? 50 : 20,
+                  borderColor: hl ? ACCENT.macro : '#EFECE8',
+                  boxShadow: hl ? `0 0 0 2px ${ACCENT.macro}30, 0 8px 24px -4px rgba(0,0,0,0.12)` : undefined
+                }}
+                onMouseEnter={e => {
+                  if (isPanning || drag || modal) return;
+                  setHoveredNode({
+                    type: 'macro',
+                    id,
+                    rect: e.currentTarget.getBoundingClientRect(),
+                    macro,
+                    macroField,
+                    catField,
+                  });
+                }}
+                onMouseLeave={() => setHoveredNode(null)}
+                onMouseDown={e => {
+                  setHoveredNode(null);
+                  handleCardMouseDown(e, id);
+                }}
+                onClick={() => {
+                  setHoveredNode(null);
+                  handleCardClick(id);
+                }}
+              >
+                <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: ACCENT.macro }} />
+                <MacroCard macro={macro} macroField={macroField} />
+              </div>
+            );
+          })}
+
+          {/* Category Indicator Cards */}
+          {tree.macro_categories.flatMap(macro => macro.categories.map(cat => {
+            const id = catId(macro.label, cat.label);
+            const p = positions[id];
+            const hl = highlight === id;
+            if (!p) return null;
+            return (
+              <div
+                key={id}
+                className="tree-node-card absolute bg-white rounded-2xl border shadow-card overflow-hidden cursor-pointer transition-all hover:shadow-lg"
+                style={{
+                  left: p.x,
+                  top: p.y,
+                  width: CW,
+                  height: CH,
+                  zIndex: drag?.id === id ? 50 : 20,
+                  borderColor: hl ? ACCENT.cat : '#EFECE8',
+                  boxShadow: hl ? `0 0 0 2px ${ACCENT.cat}30, 0 8px 24px -4px rgba(0,0,0,0.12)` : undefined
+                }}
+                onMouseEnter={e => {
+                  if (isPanning || drag || modal) return;
+                  setHoveredNode({
+                    type: 'cat',
+                    id,
+                    rect: e.currentTarget.getBoundingClientRect(),
+                    macro,
+                    cat,
+                    macroField,
+                    catField,
+                  });
+                }}
+                onMouseLeave={() => setHoveredNode(null)}
+                onMouseDown={e => {
+                  setHoveredNode(null);
+                  handleCardMouseDown(e, id);
+                }}
+                onClick={() => {
+                  setHoveredNode(null);
+                  handleCardClick(id);
+                }}
+              >
+                <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: ACCENT.cat }} />
+                <CatCard cat={cat} catField={catField} />
+              </div>
+            );
+          }))}
+        </div>
       </div>
+
+      {hoveredNode && !modal && !isPanning && !drag && (
+        <HoverPopover hovered={hoveredNode} />
+      )}
 
       {modal && <Modal data={modal} onClose={() => setModal(null)} />}
     </>

@@ -88,6 +88,28 @@ export interface OptimisationResult {
   target: number;
 }
 
+export interface TableRowItem {
+  id: string;
+  name: string;
+  section: string;
+  unit?: string;
+  isCurrency?: boolean;
+  values: Record<string, number>;
+}
+
+export interface VisualTableWorkspaceState {
+  years: {
+    historical: string[];
+    projected: string[];
+  };
+  rows: TableRowItem[];
+  growthMultiplier: number;
+  highlightedRowId?: string | null;
+  activeScenarioName: string;
+  /** When true, syncBackendState will NOT overwrite projected values — set after addWorldModel runs */
+  scenarioLocked?: boolean;
+}
+
 export interface GlobalState {
   screen: number;
   batches: Batch[];
@@ -114,6 +136,11 @@ export interface GlobalState {
   clearForecastScenarios: () => void;
   /** Per-batch forecast scenarios, persisted to localStorage */
   perBatchForecastScenarios: Record<string, import('./api').ForecastScenario[]>;
+  /** Latest ranked scenario comparison, so the Compare view survives navigation and other views can read it */
+  scenarioCompare: import('./api').ScenarioCompareResponse | null;
+  setScenarioCompare: (data: import('./api').ScenarioCompareResponse | null) => void;
+  /** Per-batch scenario comparison, persisted to localStorage */
+  perBatchScenarioCompare: Record<string, import('./api').ScenarioCompareResponse>;
   worldModels: import('./api').WorldModel[];
   addWorldModel: (wm: import('./api').WorldModel) => void;
   selectedProvenanceMetric: string | null;
@@ -122,6 +149,29 @@ export interface GlobalState {
   addProvenanceMessage: (metric: string, message: Message) => void;
   workspaceMetrics: { name: string; value: string; delta: string; dir: 'up' | 'down' | 'flat' }[];
   updateWorkspaceMetric: (name: string, value: string) => void;
+  
+  // Visual Data Table Workspace
+  visualTable: VisualTableWorkspaceState;
+  perBatchVisualTables: Record<string, VisualTableWorkspaceState>;
+  setVisualTable: (table: VisualTableWorkspaceState) => void;
+  updateTableCell: (rowId: string, year: string, value: number) => void;
+  applyTableWhatIf: (growthDeltaPct: number, scenarioLabel?: string) => void;
+  resetTableData: () => void;
+  addTableRow: (row: TableRowItem) => void;
+
+  // Conversational Workspace Table from Backend (FRONTEND_INTEGRATION)
+  workspaceTable: import('./api').WorkspaceTable | null;
+  perBatchWorkspaceTables: Record<string, import('./api').WorkspaceTable | null>;
+  setWorkspaceTable: (table: import('./api').WorkspaceTable | null) => void;
+  tableWorkspaceViewMode: 'grid' | 'world_model' | 'compare';
+  setTableWorkspaceViewMode: (mode: 'grid' | 'world_model' | 'compare') => void;
+
+  // Per-batch Setup & Dimension State
+  perBatchSetups: Record<string, SetupState>;
+  perBatchGrowthRates: Record<string, GrowthRate[]>;
+  perBatchDimensions: Record<string, DimensionCard[]>;
+  perBatchWorldModels: Record<string, import('./api').WorldModel[]>;
+
   setScreen: (screen: number) => void;
   setActiveBatch: (id: string) => void;
   setModel: (model: ModelType) => void;
@@ -146,7 +196,6 @@ export interface GlobalState {
   /** Tracks which stage of the full-scenario pipeline is actively running */
   pipelineStage: 'forecast' | 'ips' | null;
   setPipelineStage: (stage: 'forecast' | 'ips' | null) => void;
-
 
   // Async API Action helpers
   fetchBatchesFromApi?: () => Promise<void>;

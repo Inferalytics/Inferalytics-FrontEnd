@@ -695,6 +695,12 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
           setScenarioCompare(res.forecast.comparison);
           hasComparison = true;
         }
+        // "Compare all scenarios" reads existing scenarios rather than
+        // creating a new one, so res.world_model is null and neither check
+        // above fires even though worldModels already has 2+ entries to show.
+        if (res?.tools_used?.some(t => t.toLowerCase().includes('compare'))) {
+          hasComparison = true;
+        }
       } catch (chatErr) {
         console.warn('Backend chat notice:', chatErr);
       }

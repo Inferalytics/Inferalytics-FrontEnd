@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store/useStore';
 import type { ModelType, OptimizationEngineModel } from '../../types';
-import { ChevronDown, LogOut, Menu, MessageSquare, Plus, Trash2, Check, FolderKanban, Cpu, Sparkles } from 'lucide-react';
+import { ChevronDown, LogOut, Menu, Plus, Trash2, Check, FolderKanban, Cpu, Sparkles } from 'lucide-react';
 import { UserButton, useUser } from '@clerk/clerk-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../api';
@@ -15,8 +15,6 @@ export default function Header() {
     setModel,
     leftSidebarOpen,
     setLeftSidebarOpen,
-    rightSidebarOpen,
-    setRightSidebarOpen,
     fetchBatchesFromApi,
     createBatchApi,
     switchBatchApi,
@@ -140,16 +138,14 @@ export default function Header() {
         {/* Vertical divider */}
         <span className="hidden sm:block h-5 w-px bg-warm-border/60" />
 
-        {/* Left Sidebar Toggle (Only for Dimensions/Scenarios on small screens) */}
-        {tab && tab !== 'conversation' && (
-          <button
-            onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
-            className="p-1.5 rounded-xl bg-warm-bg hover:bg-muted text-warm-text border border-warm-border/50 cursor-pointer flex items-center justify-center shrink-0 transition-colors"
-            title="Toggle sidebar"
-          >
-            <Menu className="h-4 w-4" />
-          </button>
-        )}
+        {/* Left Sidebar Toggle (Mobile Drawer for Advisor) */}
+        <button
+          onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+          className="lg:hidden p-1.5 rounded-xl bg-warm-bg hover:bg-muted text-warm-text border border-warm-border/50 cursor-pointer flex items-center justify-center shrink-0 transition-colors"
+          title="Toggle Inferalytics Advisor"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
 
         {/* Batch / Workspace Switcher Dropdown */}
         <div className="relative" ref={batchMenuRef}>
@@ -360,18 +356,6 @@ export default function Header() {
 
       {/* ── Right: User Profile & Quick Actions ── */}
       <div className="flex items-center gap-2 sm:gap-3">
-        
-        {/* Mobile Right Sidebar Toggle for screens 2 & 3 */}
-        {tab && tab !== 'conversation' && (
-          <button
-            onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
-            className="lg:hidden p-1.5 rounded-xl bg-warm-bg hover:bg-muted text-warm-text border border-warm-border/50 cursor-pointer flex items-center justify-center shrink-0"
-            title="Toggle decision panel"
-          >
-            <MessageSquare className="h-4 w-4" />
-          </button>
-        )}
-
         {/* User Button / Account Avatar */}
         <div className="h-8 w-8 rounded-full flex items-center justify-center relative shadow-xs border border-warm-border shrink-0 bg-white">
           {isLoaded && isSignedIn ? (

@@ -546,6 +546,16 @@ export interface TreeRelationships {
   fixed_points_held_constant: number[];
 }
 
+export interface DataPointProvenance {
+  source_type: "web" | "not_found" | "user_edit" | string;
+  source_url?: string;
+  source_name?: string;
+  collected_at?: string;
+  confidence?: number;
+  edited_by?: string;
+  previous_value?: number;
+}
+
 export interface DataPoint {
   type: "data_point";
   vector_index: number;
@@ -558,6 +568,7 @@ export interface DataPoint {
   change_pct: string;
   egr_contribution_pct: string;
   status: "increased" | "decreased" | "unchanged" | "fixed";
+  provenance?: DataPointProvenance;
 }
 
 export interface TreeCategory {

@@ -8,7 +8,7 @@
  */
 
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, TrendingUp, TrendingDown } from 'lucide-react';
+import { ChevronDown, ChevronRight, TrendingUp, TrendingDown, Globe, ExternalLink, Edit3, HelpCircle } from 'lucide-react';
 import type { WorldModelTreeType, MacroCategory, TreeCategory, DataPoint, MacroMetric } from '../../types/api';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -29,6 +29,22 @@ function parseContrib(s: string): number {
 
 function maxContrib(macros: MacroMetric[]): number {
   return Math.max(...macros.map(m => parseContrib(m.egr_contribution_pct)), 0.01);
+}
+
+function getHostname(urlStr?: string): string {
+  if (!urlStr) return '';
+  try {
+    const url = new URL(urlStr);
+    return url.hostname.replace(/^www\./, '');
+  } catch {
+    return urlStr;
+  }
+}
+
+function formatMacroLabel(label: string): string {
+  if (label === 'web') return 'Web Benchmarks';
+  if (label === 'not_found') return 'Not Found (Web)';
+  return label;
 }
 
 // ── Tree connector line component ─────────────────────────────────────────────
@@ -67,6 +83,13 @@ function DataPointNode({
   const isFixed = dp.status === 'fixed';
   const sign    = dp.delta >= 0 ? '+' : '';
 
+  // Filter technical keys from generic row_labels tag cloud if provenance exists
+  const technicalKeys = new Set(['source_type', 'source_url', 'source_name', 'collected_at']);
+  const displayRowLabels = Object.entries(dp.row_labels || {}).filter(([k]) => !dp.provenance || !technicalKeys.has(k));
+
+  const prov = dp.provenance;
+  const host = prov?.source_url ? getHostname(prov.source_url) : (prov?.source_name || 'Web');
+
   return (
     <div className="flex items-start">
       <TreeBranch isLast={isLast} />
@@ -80,23 +103,73 @@ function DataPointNode({
               ? 'bg-red-50/50 border-red-100/50'
               : 'bg-white border-warm-border/30'
       }`}>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="font-semibold text-warm-text truncate">{dp.label}</span>
             {isFixed && (
               <span className="px-1 py-0.5 rounded text-[8px] font-bold uppercase bg-warm-muted/20 text-warm-muted">fixed</span>
             )}
+
+            {/* Provenance Badge */}
+            {prov && (
+              prov.source_type === 'web' ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-blue-50 text-blue-700 border border-blue-200/60 shadow-2xs">
+                  <Globe className="h-2.5 w-2.5 shrink-0 text-blue-500" />
+                  {prov.source_url ? (
+                    <a
+                      href={prov.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-0.5 hover:underline font-semibold"
+                      title={prov.source_name ? `${prov.source_name} (${prov.source_url})` : prov.source_url}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {host}
+                      <ExternalLink className="h-2 w-2 opacity-70" />
+                    </a>
+                  ) : (
+                    <span>{prov.source_name || 'Web Benchmark'}</span>
+                  )}
+                  {prov.confidence != null && (
+                    <span
+                      className={`ml-0.5 px-1 py-0.2 rounded text-[8px] font-bold font-mono ${
+                        prov.confidence >= 0.7 ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                      }`}
+                      title={`Extraction confidence: ${(prov.confidence * 100).toFixed(0)}%`}
+                    >
+                      {(prov.confidence * 100).toFixed(0)}%
+                    </span>
+                  )}
+                </span>
+              ) : prov.source_type === 'not_found' ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[8.5px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                  <HelpCircle className="h-2.5 w-2.5 text-gray-400" />
+                  <span>Not found on web</span>
+                </span>
+              ) : prov.source_type === 'user_edit' ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[8.5px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                  <Edit3 className="h-2.5 w-2.5 text-amber-500" />
+                  <span>Edited</span>
+                  {prov.previous_value != null && (
+                    <span className="text-[8px] text-amber-600/80 font-mono">(was {fmt(prov.previous_value)})</span>
+                  )}
+                </span>
+              ) : null
+            )}
           </div>
-          {Object.keys(dp.row_labels).length > 0 && (
-            <div className="flex gap-2 mt-0.5 flex-wrap">
-              {Object.entries(dp.row_labels).map(([k, v]) => (
-                <span key={k} className="text-[9px] text-warm-muted">
-                  <span className="font-semibold">{k}:</span> {v}
+
+          {/* Row labels */}
+          {displayRowLabels.length > 0 && (
+            <div className="flex gap-1.5 mt-1 flex-wrap">
+              {displayRowLabels.map(([k, v]) => (
+                <span key={k} className="text-[9px] px-1.5 py-0.2 rounded bg-warm-bg/70 border border-warm-border/40 text-warm-text/80">
+                  <span className="font-semibold text-warm-muted">{k}:</span> {v}
                 </span>
               ))}
             </div>
           )}
-          <div className="text-[9px] font-mono text-warm-muted mt-0.5">
+
+          <div className="text-[9px] font-mono text-warm-muted mt-1">
             {fmt(dp.original_value)} → {fmt(dp.final_value)}
           </div>
         </div>
@@ -211,7 +284,7 @@ function MacroNode({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[9px] font-bold uppercase tracking-wider text-warm-muted">{macroField}</span>
-                <span className="text-[13px] font-bold text-warm-text">{macro.label}</span>
+                <span className="text-[13px] font-bold text-warm-text">{formatMacroLabel(macro.label)}</span>
                 <span className="text-[9px] text-warm-muted bg-warm-bg border border-warm-border/40 px-1.5 py-0.5 rounded-full">
                   {macro.categories_count} sub-groups
                 </span>
@@ -362,7 +435,7 @@ export default function WorldModelTree({ tree }: Props) {
               return (
                 <div key={m.label} className="flex items-center gap-3">
                   <div className="text-[10px] font-mono text-warm-muted w-4 shrink-0">{i + 1}</div>
-                  <div className="w-20 text-[11px] font-semibold text-warm-text shrink-0 truncate">{m.label}</div>
+                  <div className="w-20 text-[11px] font-semibold text-warm-text shrink-0 truncate">{formatMacroLabel(m.label)}</div>
                   <div className="flex-1 h-2 rounded-full bg-warm-border/30">
                     <div className="h-2 rounded-full transition-all duration-500"
                       style={{ width: `${bar}%`, backgroundColor: m.delta >= 0 ? '#16A34A' : '#EF4444' }} />

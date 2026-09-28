@@ -1,4 +1,4 @@
-export * from './api';
+export * from './api.ts';
 
 export type ModelType = 'Newton-Raphson' | 'Holt-Winters' | 'Monte Carlo' | 'auto';
 

@@ -4,7 +4,6 @@ import { useStore } from '../../store/useStore';
 import Header from './Header';
 import LeftPanel from './LeftPanel';
 import CenterPanel from './CenterPanel';
-import RightPanel from './RightPanel';
 import api from '../../api';
 
 // Sync dictionary mapping nested route slugs to spec screens
@@ -31,11 +30,8 @@ export default function Shell() {
     setScreen,
     leftSidebarOpen,
     setLeftSidebarOpen,
-    rightSidebarOpen,
-    setRightSidebarOpen,
     activeBatchId,
     setActiveBatch,
-    batches
   } = useStore();
 
   // ── Batch gate: redirect to /batch-select if no batch is active ──
@@ -44,16 +40,12 @@ export default function Shell() {
 
   // Tracks the last URL batch id this effect has already reconciled, so an
   // in-app switch (Header dropdown → setActiveBatch) isn't immediately fought
-  // by this effect re-reading the not-yet-updated URL and reverting back —
-  // that race is what caused the flicker on batch switch/create.
+  // by this effect re-reading the not-yet-updated URL and reverting back.
   const lastSyncedUrlBatch = useRef<string | null>(null);
 
   useEffect(() => {
     const urlBatchId = searchParams.get('batch');
 
-    // Only pull the URL's batch into the store on a genuine external URL
-    // change (initial load, pasted link, back/forward) — not one we've
-    // already reconciled.
     if (urlBatchId && urlBatchId !== activeBatchId && urlBatchId !== lastSyncedUrlBatch.current) {
       lastSyncedUrlBatch.current = urlBatchId;
       setActiveBatch(urlBatchId);
@@ -61,14 +53,12 @@ export default function Shell() {
       return;
     }
 
-    // If Zustand already has an active batch, mark checked
     if (activeBatchId) {
       lastSyncedUrlBatch.current = activeBatchId;
       setBatchChecked(true);
       return;
     }
 
-    // Neither state nor URL has a batch — ask the backend
     void (async () => {
       try {
         const session = await api.getBatchSession();
@@ -122,11 +112,10 @@ export default function Shell() {
     const handleCheckMobile = () => {
       if (window.innerWidth < 1024) {
         setLeftSidebarOpen(false);
-        setRightSidebarOpen(false);
       }
     };
     handleCheckMobile();
-  }, [tab, subtab, setLeftSidebarOpen, setRightSidebarOpen]);
+  }, [tab, subtab, setLeftSidebarOpen]);
 
   // ── Conditional renders (after all hooks) ──
   if (shouldRedirect) {
@@ -141,34 +130,23 @@ export default function Shell() {
     );
   }
 
-  const showPanels = tab !== 'conversation' && tab !== undefined && tab !== '';
-
   return (
     <div className="flex flex-col h-screen w-full overflow-x-hidden overflow-y-hidden bg-warm-gradient select-none">
       {/* Header */}
       <Header />
 
-      {/* Content Columns */}
+      {/* Content Columns: Inferalytics Advisor ALWAYS on the LEFT, Workspace in Center */}
       <div className="flex flex-1 w-full min-h-0 overflow-hidden relative">
-        {/* Backdrop for Left Sidebar */}
-        {showPanels && leftSidebarOpen && (
+        {/* Backdrop for Left Sidebar on mobile */}
+        {leftSidebarOpen && (
           <div
             onClick={() => setLeftSidebarOpen(false)}
-            className="fixed inset-0 bg-[#2C2B29]/15 backdrop-blur-[1px] z-30 lg:hidden"
+            className="fixed inset-0 bg-[#2C2B29]/20 backdrop-blur-[1px] z-30 lg:hidden"
           />
         )}
 
-        {/* Backdrop for Right Sidebar */}
-        {showPanels && rightSidebarOpen && (
-          <div
-            onClick={() => setRightSidebarOpen(false)}
-            className="fixed inset-0 bg-[#2C2B29]/15 backdrop-blur-[1px] z-30 lg:hidden"
-          />
-        )}
-
-        {showPanels && <LeftPanel />}
+        <LeftPanel />
         <CenterPanel />
-        {showPanels && <RightPanel />}
       </div>
     </div>
   );

@@ -125,7 +125,7 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
               deltaNum: chgPct,
               contribution: `+${baseContrib.toFixed(1)}%`,
               contributionNum: baseContrib,
-              role: (cat.role || (Math.abs(delta) > 500 ? 'driver' : 'modifier')) as 'driver' | 'modifier',
+              role: (((cat as any).role || (Math.abs(delta) > 500 ? 'driver' : 'modifier')) as 'driver' | 'modifier'),
               status: 'Vectorised ✓',
             });
           });
@@ -148,7 +148,7 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
             deltaNum: chgPct,
             contribution: `+${baseContrib.toFixed(1)}%`,
             contributionNum: baseContrib,
-            role: (macro.role || 'driver') as 'driver' | 'modifier',
+            role: (((macro as any).role || 'driver') as 'driver' | 'modifier'),
             status: 'Vectorised ✓',
           });
         }
@@ -205,10 +205,11 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
         change_pct: `${chgPct >= 0 ? '+' : ''}${chgPct.toFixed(2)}%`,
         egr_contribution_pct: `+${Math.min(90, Math.max(10, Math.round(chgPct * 3.8)))}%`,
         categories_count: items.length,
-        categories: items.map(it => {
+        categories: items.map((it, cIdx) => {
           const oVal = parseFloat(it.baseline.replace(/[^0-9.-]/g, '')) || 0;
           const fVal = parseFloat(it.optimized.replace(/[^0-9.-]/g, '')) || 0;
           const d = fVal - oVal;
+          const deltaPct = oVal > 0 ? (d / oVal) * 100 : 0;
           return {
             type: 'category' as const,
             label: it.name,
@@ -217,9 +218,34 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
             delta: d,
             change_pct: it.delta,
             egr_contribution_pct: it.contribution,
+            data_points_count: 2,
             data_points: [
-              { period: 'Historical Base', value: oVal },
-              { period: 'Projected Target', value: fVal }
+              {
+                type: 'data_point' as const,
+                vector_index: cIdx * 2,
+                label: `${it.name} (Historical Base)`,
+                column: 'Historical',
+                row_labels: { Metric: it.name },
+                original_value: oVal,
+                final_value: oVal,
+                delta: 0,
+                change_pct: '0.0%',
+                egr_contribution_pct: '0.0%',
+                status: 'unchanged' as const,
+              },
+              {
+                type: 'data_point' as const,
+                vector_index: cIdx * 2 + 1,
+                label: `${it.name} (Projected Target)`,
+                column: 'Projected',
+                row_labels: { Metric: it.name },
+                original_value: oVal,
+                final_value: fVal,
+                delta: d,
+                change_pct: `${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}%`,
+                egr_contribution_pct: it.contribution,
+                status: (d >= 0 ? 'increased' : 'decreased') as 'increased' | 'decreased',
+              }
             ]
           };
         })
@@ -240,10 +266,11 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
       total_delta: portfolioTotals.delta,
       total_change_pct: `${portfolioTotals.deltaPct >= 0 ? '+' : ''}${portfolioTotals.deltaPct.toFixed(2)}%`,
       hierarchy_schema: {
+        is_semantic: true,
         levels: [
-          { level: 'root', label: 'EGR Root' },
-          { level: 'macro_category', label: 'Macro Driver' },
-          { level: 'category', label: 'Indicator' }
+          { level: 'total', label: 'EGR Root', description: 'Total portfolio growth' },
+          { level: 'macro_category', label: 'Macro Driver', description: 'Macro business drivers' },
+          { level: 'category', label: 'Indicator', description: 'Specific key indicator' }
         ],
         macro_field: 'Macro Driver',
         category_field: 'Indicator',

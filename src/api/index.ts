@@ -1,4 +1,4 @@
-import axiosClient from './axiosClient';
+import axiosClient from './axiosClient.ts';
 import type {
   BatchSessionResponse,
   CreateBatchResponse,
@@ -25,7 +25,7 @@ import type {
   ScenarioCompareResponse,
   AgentRequest,
   AgentResponse,
-} from '../types/api';
+} from '../types/api.ts';
 
 export const api = {
   // ─── Health Check ─────────────────────────────────────────────────────────

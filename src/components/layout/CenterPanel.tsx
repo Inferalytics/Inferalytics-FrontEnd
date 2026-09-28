@@ -3,7 +3,7 @@ import { Check, GitCompare, TrendingUp } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import { useNavigate } from 'react-router-dom';
-import TalkPanel from './panels/TalkPanel';
+import VisualTableWorkspace from './panels/VisualTableWorkspace';
 import SetupPanel from './panels/SetupPanel';
 import BuildPanel from './panels/BuildPanel';
 import BatchPanel from './panels/BatchPanel';
@@ -64,7 +64,6 @@ function LearningTab() {
 }
 
 export default function CenterPanel() {
-  const { screen } = useStore();
   const { tab } = useParams<{ tab: string }>();
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -80,14 +79,21 @@ export default function CenterPanel() {
       isConversation ? 'overflow-hidden p-3 sm:p-4 md:p-5 flex flex-col' : 'overflow-y-auto custom-scrollbar p-4 sm:p-6'
     }`}>
       {toastMsg && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-brand-indigo text-white font-sans text-[12.5px] px-4 py-2.5 rounded-xl shadow-lg border border-lavender/30 flex items-center gap-2 animate-float-up">
-          <Check className="h-4 w-4 text-peach" />
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-[#FF5A1F] text-white font-sans text-[12.5px] px-4 py-2.5 rounded-xl shadow-lg border border-[#FFD4C5]/40 flex items-center gap-2 animate-float-up">
+          <Check className="h-4 w-4 text-white" />
           {toastMsg}
         </div>
       )}
 
       <div className={`relative z-10 w-full ${isConversation ? 'h-full flex flex-col min-h-0' : 'min-h-full flex flex-col justify-between'}`}>
-        {isConversation && <TalkPanel triggerToast={triggerToast} />}
+        {isConversation && (
+          <VisualTableWorkspace
+            onWhatIfPrompt={(prompt) => {
+              window.dispatchEvent(new CustomEvent('advisor-send-message', { detail: prompt }));
+            }}
+            triggerToast={triggerToast}
+          />
+        )}
         {(tab === 'dimensions' || tab === 'blueprint' || tab === 'ecr-build' || tab === 'ecr-batch') && <BuildPanel />}
         {(tab === 'scenarios' || tab === 'ips-engine') && <OptimisePanel triggerToast={triggerToast} />}
         {tab === 'world-model' && <WorldModelPage />}

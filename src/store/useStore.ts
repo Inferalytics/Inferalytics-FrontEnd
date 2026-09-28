@@ -11,10 +11,10 @@ try {
     localStorage.removeItem('inferalytics-store');
   }
 } catch { /* ignore */ }
-import { GlobalState, Batch, Message, Relationship, DimensionCard, Scenario, ModelType, WorldModel } from '../types';
-import type { ForecastScenariosResponse } from '../types/api';
-import api from '../api';
-import { buildFullScenarioPrompt, nextStrategy, shouldRefreshForecast } from '../lib/agentNavigation';
+import type { GlobalState, Batch, Message, Relationship, DimensionCard, Scenario, ModelType, WorldModel, SetupState, GrowthRate } from '../types/index.ts';
+import type { ForecastScenariosResponse } from '../types/api.ts';
+import api from '../api/index.ts';
+import { buildFullScenarioPrompt, nextStrategy, shouldRefreshForecast } from '../lib/agentNavigation.ts';
 
 /**
  * Module-level forecast page cache — never persisted, never hits localStorage.

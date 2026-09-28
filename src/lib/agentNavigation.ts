@@ -17,6 +17,8 @@ const WORLD_MODEL_TOOLS = new Set([
   'run_full_pipeline', 'run_pipeline', 'full_pipeline', 'optimize',
   'run_newton_raphson', 'newton_raphson',
   'run_complete_scenario', // Flow C — always includes optimization
+  'collect_web_data',
+  'update_world_model_entry',
 ]);
 
 // Tools that indicate ONLY an explicit scenario comparison (no new run)
@@ -144,7 +146,7 @@ export function isFullScenarioRequest(msg: string): boolean {
  */
 export function hasExplicitPipelineParams(msg: string): boolean {
   // Explicit period: Q1_2025, Q2 2024, Q1-2025, "Q3 25", etc.
-  if (/\bq[1-4][_\s\-]?\d{2,4}\b/i.test(msg)) return true;
+  if (/\bq[1-4][_\s-]?\d{2,4}\b/i.test(msg)) return true;
   // Explicit growth/EGR percentage: "25%", "15 %", "growth rate 20", "egr 12"
   if (/\d+\s*%|\bgrowth\s*rate\s+\d+|\begr\s+\d+|\brate\s+\d+/i.test(msg)) return true;
   return false;

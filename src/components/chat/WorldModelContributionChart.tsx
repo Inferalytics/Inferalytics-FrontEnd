@@ -12,12 +12,13 @@
  */
 
 import React, { useState } from 'react';
-import { ChevronRight, TrendingUp, TrendingDown, Info } from 'lucide-react';
+import { ChevronRight, TrendingUp, TrendingDown, Info, Globe, ExternalLink } from 'lucide-react';
 import type {
   WorldModelTreeType,
   MacroCategory,
   TreeCategory,
   DataPoint,
+  DataPointProvenance,
 } from '../../types/api';
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
@@ -58,6 +59,7 @@ interface ChartItem {
   childCount: number;   // 0 = leaf node
   childLabel: string;   // e.g. "periods" or "data points"
   isFixed: boolean;
+  provenance?: DataPointProvenance;
 }
 
 // ── Map backend structures → ChartItem[] ────────────────────────────────────
@@ -107,6 +109,7 @@ function dataPointsToItems(dps: DataPoint[]): ChartItem[] {
     childCount: 0,
     childLabel: '',
     isFixed: dp.status === 'fixed',
+    provenance: dp.provenance,
   }));
 }
 
@@ -182,6 +185,33 @@ function TooltipCard({ item }: { item: ChartItem }) {
         <div className="text-[9px] font-bold uppercase text-warm-muted mb-0.5">EGR Contribution</div>
         <div className={`font-mono font-bold ${signCls(item.egrPct)}`}>{item.egrPctStr}</div>
       </div>
+      {item.provenance && (
+        <div className="border-l border-warm-border/40 pl-3">
+          <div className="text-[9px] font-bold uppercase text-warm-muted mb-0.5">Source</div>
+          <div className="flex items-center gap-1 text-blue-600 font-medium">
+            <Globe className="h-3 w-3" />
+            {item.provenance.source_url ? (
+              <a
+                href={item.provenance.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:underline flex items-center gap-0.5"
+                onClick={e => e.stopPropagation()}
+              >
+                {item.provenance.source_name || 'Web'}
+                <ExternalLink className="h-2 w-2" />
+              </a>
+            ) : (
+              <span>{item.provenance.source_name || item.provenance.source_type}</span>
+            )}
+            {item.provenance.confidence != null && (
+              <span className="text-[9px] text-warm-muted font-mono">
+                ({(item.provenance.confidence * 100).toFixed(0)}%)
+              </span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, TrendingUp, TrendingDown, Minus, Plus, Maximize2 } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, Minus, Plus, Maximize2, Globe, ExternalLink, HelpCircle, Edit3 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area, Cell,
@@ -431,15 +431,46 @@ function Modal({ data, onClose }: { data: ModalData; onClose: () => void }) {
               <tbody>
                 {sorted.map((dp, i) => {
                   const isFixed = dp.status === 'fixed';
+                  const prov = dp.provenance;
+                  const host = prov?.source_url ? (() => {
+                    try { return new URL(prov.source_url).hostname.replace(/^www\./, ''); } catch { return prov.source_url; }
+                  })() : (prov?.source_name || 'Web');
+
                   return (
                     <tr key={dp.vector_index}
                       className={`border-b border-warm-border/10 ${isFixed ? 'opacity-40' : ''} ${i % 2 === 0 ? 'bg-warm-bg/30' : 'bg-white'}`}>
                       <td className="px-3 py-1.5 text-warm-muted font-mono">{i + 1}</td>
-                      <td className="px-3 py-1.5 font-semibold text-warm-text max-w-[200px] truncate">
-                        <div className="flex items-center gap-1.5">
+                      <td className="px-3 py-1.5 font-semibold text-warm-text max-w-[260px]">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <DeltaIcon d={dp.delta} />
                           <span className="truncate">{dp.label}</span>
                           {isFixed && <span className="text-[8px] px-1 rounded bg-warm-muted/20 text-warm-muted shrink-0">fixed</span>}
+                          {prov && (
+                            prov.source_type === 'web' ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[8px] font-medium bg-blue-50 text-blue-700 border border-blue-200/60 shrink-0">
+                                <Globe className="h-2 w-2 text-blue-500" />
+                                {prov.source_url ? (
+                                  <a href={prov.source_url} target="_blank" rel="noopener noreferrer" className="hover:underline font-semibold inline-flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                                    {host}
+                                    <ExternalLink className="h-1.5 w-1.5" />
+                                  </a>
+                                ) : <span>{prov.source_name || 'Web'}</span>}
+                                {prov.confidence != null && (
+                                  <span className="font-mono text-[7.5px] opacity-75">{(prov.confidence * 100).toFixed(0)}%</span>
+                                )}
+                              </span>
+                            ) : prov.source_type === 'not_found' ? (
+                              <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded-full text-[8px] font-medium bg-gray-100 text-gray-500 border border-gray-200 shrink-0">
+                                <HelpCircle className="h-2 w-2 text-gray-400" />
+                                <span>Not found</span>
+                              </span>
+                            ) : prov.source_type === 'user_edit' ? (
+                              <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded-full text-[8px] font-medium bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
+                                <Edit3 className="h-2 w-2 text-amber-500" />
+                                <span>Edited</span>
+                              </span>
+                            ) : null
+                          )}
                         </div>
                       </td>
                       <td className="px-3 py-1.5 font-black" style={{ color: dHex(dp.delta) }}>{dp.egr_contribution_pct}</td>

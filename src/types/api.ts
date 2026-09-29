@@ -646,9 +646,16 @@ export interface WorkspaceTableColumn {
   type: "text" | "number" | "boolean" | "datetime" | "mixed";
 }
 
+export interface WorkspaceTableRow {
+  id: string;              // stable row identifier
+  item: string;            // row label shown in first column
+  _type?: "separator" | string; // present only on separator rows
+  [colId: string]: any;    // cell values keyed by column id
+}
+
 export interface WorkspaceTable {
   columns: WorkspaceTableColumn[];   // ordered — "item" is always index 0
-  rows: Record<string, any>[];       // each row is { id, item, [colId]: value, ... }
+  rows: WorkspaceTableRow[];         // each row is { id, item, [colId]: value, ... }
   version: number;                   // increments on every update
   updated_at: string | null;         // ISO-8601
 }

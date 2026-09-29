@@ -5,6 +5,7 @@ import { useUser } from '@clerk/clerk-react';
 import { useStore, buildVisualTableFromContent } from '../../../store/useStore';
 import api from '../../../api';
 import type { ConversationTurn } from '../../../types/api';
+import { updateWorkspaceTableWithScenario } from '../../../lib/workspaceTableUtils';
 import VisualTableWorkspace from './VisualTableWorkspace';
 
 const renderFormattedText = (content: string, isUser = false) => {
@@ -708,67 +709,9 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
     const currentWsTable = useStore.getState().workspaceTable;
     if (!currentWsTable || !currentWsTable.columns || currentWsTable.columns.length === 0) return;
 
-    const lower = prompt.toLowerCase();
-    let multiplier = 1.0;
-    let scenarioColName = '';
-    let scenarioColId = '';
-
-    if (lower.includes('+5%') || lower.includes('5%') || lower.includes('accelerat')) {
-      multiplier = 1.05;
-      scenarioColName = 'Scenario (+5%)';
-      scenarioColId = 'scenario_plus_5';
-    } else if (lower.includes('+10%') || lower.includes('10%') || lower.includes('expansion')) {
-      multiplier = 1.10;
-      scenarioColName = 'Scenario (+10%)';
-      scenarioColId = 'scenario_plus_10';
-    } else if (lower.includes('-5%') || lower.includes('soft landing') || lower.includes('contraction')) {
-      multiplier = 0.95;
-      scenarioColName = 'Scenario (-5%)';
-      scenarioColId = 'scenario_minus_5';
-    } else if (lower.includes('12%') || lower.includes('growth target')) {
-      multiplier = 1.12;
-      scenarioColName = 'Target (+12%)';
-      scenarioColId = 'target_12_pct';
-    } else if (lower.includes('reset') || lower.includes('baseline')) {
-      // Remove scenario columns
-      const filteredCols = currentWsTable.columns.filter(c => !c.id.startsWith('scenario_') && !c.id.startsWith('target_'));
-      setWorkspaceTable({
-        ...currentWsTable,
-        columns: filteredCols,
-        version: (currentWsTable.version || 1) + 1,
-        updated_at: new Date().toISOString(),
-      });
-      return;
-    }
-
-    if (scenarioColId && multiplier !== 1.0) {
-      const numCols = currentWsTable.columns.filter(c => c.type === 'number' && !c.id.startsWith('scenario_') && !c.id.startsWith('target_'));
-      const targetCol = numCols[numCols.length - 1] || numCols[0];
-      if (!targetCol) return;
-
-      const existingColIdx = currentWsTable.columns.findIndex(c => c.id === scenarioColId);
-      let newColumns = [...currentWsTable.columns];
-      if (existingColIdx === -1) {
-        newColumns.push({ id: scenarioColId, name: scenarioColName, type: 'number' });
-      }
-
-      const newRows = currentWsTable.rows.map(row => {
-        const rawVal = row[targetCol.id];
-        const numVal = typeof rawVal === 'number' ? rawVal : parseFloat(String(rawVal).replace(/[^0-9.-]/g, ''));
-        const computed = isNaN(numVal) ? 0 : parseFloat((numVal * multiplier).toFixed(2));
-        return {
-          ...row,
-          [scenarioColId]: computed,
-        };
-      });
-
-      setWorkspaceTable({
-        ...currentWsTable,
-        columns: newColumns,
-        rows: newRows,
-        version: (currentWsTable.version || 1) + 1,
-        updated_at: new Date().toISOString(),
-      });
+    const updated = updateWorkspaceTableWithScenario(currentWsTable, prompt);
+    if (updated) {
+      setWorkspaceTable(updated);
     }
   };
 

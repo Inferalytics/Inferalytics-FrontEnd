@@ -5,6 +5,8 @@ import type { WorldModelTreeType } from '../../../types/api';
 import { useStore } from '../../../store/useStore';
 import WorldModelCanvasTree from '../../chat/WorldModelCanvasTree';
 import WorldModelCompareView from '../../chat/WorldModelCompareView';
+import CombinedSpreadsheetTable from './CombinedSpreadsheetTable';
+import { exportWorkspaceTableToCsv } from '../../../lib/workspaceTableUtils';
 
 interface VisualTableWorkspaceProps {
   onWhatIfPrompt?: (prompt: string) => void;
@@ -312,17 +314,36 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
   // ─────────────────────────────────────────────────────────────────────────────
   // CSV Export Handlers
   // ─────────────────────────────────────────────────────────────────────────────
+  const hasValidWorkspaceTable = Boolean(
+    workspaceTable &&
+    workspaceTable.columns &&
+    workspaceTable.columns.length > 0 &&
+    workspaceTable.rows &&
+    workspaceTable.rows.length > 0
+  );
+
   const handleExportCSV = () => {
+    if (hasValidWorkspaceTable && workspaceTable) {
+      const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(exportWorkspaceTableToCsv(workspaceTable));
+      const link = document.createElement('a');
+      link.setAttribute('href', csvContent);
+      link.setAttribute('download', `inferalytics_combined_workspace_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      if (triggerToast) triggerToast('Exported combined workspace to CSV');
+      return;
+    }
+
     const allYears = [...visualTable.years.historical, ...visualTable.years.projected];
     const headers = ['Metric', 'Category', ...allYears].join(',');
     const rowsCsv = visualTable.rows.map(r => {
       const vals = allYears.map(yr => r.values[yr] ?? '');
       return `"${r.name}","${r.section}",${vals.join(',')}`;
     });
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers, ...rowsCsv].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent([headers, ...rowsCsv].join('\n'));
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', csvContent);
     link.setAttribute('download', `inferalytics_visual_workspace_${new Date().toISOString().slice(0,10)}.csv`);
     document.body.appendChild(link);
     link.click();
@@ -450,7 +471,9 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
     : worldModels[0]?.world_model_tree;
   const hasRealWm = wmTree && wmTree.macro_categories && wmTree.macro_categories.length > 0;
 
-  const workspaceTitle = hasRealWm
+  const workspaceTitle = hasValidWorkspaceTable
+    ? 'Combined Benchmark & Operational Spreadsheet'
+    : hasRealWm
     ? `${wmTree.macro_categories[0]?.label || 'Portfolio'} Forecast & Variance Model`
     : activeTableRows.length > 0
     ? visualTable.activeScenarioName
@@ -606,7 +629,7 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
       </div>
 
       {/* ── Content View ── */}
-      {activeTableRows.length === 0 && factorRows.length === 0 ? (
+      {!hasValidWorkspaceTable && activeTableRows.length === 0 && factorRows.length === 0 ? (
         <div className="flex-1 min-h-[460px] flex flex-col items-center justify-center p-8 sm:p-16 text-center bg-[#FAF9F7]/40">
           <div className="h-16 w-16 rounded-2xl bg-[#FFF2EE] border border-[#FFD4C5] flex items-center justify-center mb-4 shadow-xs">
             <Table2 className="h-8 w-8 text-[#FF5A1F]" />
@@ -935,8 +958,13 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
             </>
           )}
         </div>
+      ) : hasValidWorkspaceTable && workspaceTable ? (
+        <CombinedSpreadsheetTable
+          table={workspaceTable}
+          triggerToast={triggerToast}
+        />
       ) : (
-        /* ── Structured Spreadsheet View (Visual Table Model) ── */
+        /* ── Structured Spreadsheet View (Fallback Visual Table Model) ── */
         <div className="flex-1 min-h-0 overflow-auto custom-scrollbar w-full relative">
           {/* Legend Ribbon */}
           <div className="sticky left-0 z-20 flex items-center justify-between gap-3 px-4 py-1.5 bg-white border-b border-[#EDEAE4] text-[10.5px] font-mono select-none">

@@ -28,11 +28,14 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
     egrTarget,
     tableWorkspaceViewMode,
     setTableWorkspaceViewMode,
+    worldModelLoading,
+    isAwaitingDataSelection,
+    worldModelSubView,
+    setWorldModelSubView,
   } = useStore();
 
   const [editingCell, setEditingCell] = useState<{ rowId: string; year: string } | null>(null);
   const [editValue, setEditValue] = useState<string>('');
-  const [worldModelSubView, setWorldModelSubView] = useState<'matrix' | 'tree'>('matrix');
 
   // Derive batch-specific world models
   const batchModels = useMemo(() => {
@@ -566,11 +569,15 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
               <span>Spreadsheet</span>
             </button>
             <button
-              onClick={() => setTableWorkspaceViewMode('world_model')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                tableWorkspaceViewMode === 'world_model'
-                  ? 'bg-[#FF5A1F] text-white font-bold'
-                  : 'text-warm-muted hover:text-warm-text'
+              onClick={() => !isAwaitingDataSelection && setTableWorkspaceViewMode('world_model')}
+              disabled={isAwaitingDataSelection}
+              title={isAwaitingDataSelection ? 'Respond to the data source prompt first' : undefined}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                isAwaitingDataSelection
+                  ? 'opacity-40 cursor-not-allowed text-warm-muted'
+                  : tableWorkspaceViewMode === 'world_model'
+                    ? 'bg-[#FF5A1F] text-white font-bold cursor-pointer'
+                    : 'text-warm-muted hover:text-warm-text cursor-pointer'
               }`}
             >
               <Layers className="h-3 w-3" />
@@ -769,7 +776,70 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
         </div>
       ) : tableWorkspaceViewMode === 'world_model' ? (
         <div className="flex-1 min-h-0 overflow-auto custom-scrollbar w-full p-4 flex flex-col gap-4">
-          
+
+          {worldModelLoading ? (
+            /* ── Loading Skeleton — shown while backend builds the World Model ── */
+            <div className="flex flex-col gap-4 animate-pulse">
+              {/* Sub-view switcher placeholder */}
+              <div className="flex items-center justify-between gap-2 flex-wrap shrink-0">
+                <div className="flex items-center gap-1 bg-[#F4F1EC] p-1 rounded-xl border border-warm-border/60">
+                  <div className="h-7 w-36 rounded-lg bg-[#E5E1D8]" />
+                  <div className="h-7 w-32 rounded-lg bg-[#E5E1D8] ml-1" />
+                </div>
+                <div className="h-5 w-32 rounded bg-[#E5E1D8]" />
+              </div>
+
+              {/* Processing banner */}
+              <div className="flex items-center gap-3 rounded-xl border border-[#FFD4C5] bg-[#FFF2EE] px-4 py-3">
+                <div className="h-9 w-9 rounded-xl bg-[#FFD4C5] shrink-0" />
+                <div className="flex flex-col gap-1.5 flex-1">
+                  <div className="h-3.5 w-48 rounded bg-[#FFD4C5]" />
+                  <div className="h-3 w-64 rounded bg-[#FFD4C5]/60" />
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="h-2 w-2 rounded-full bg-[#FF5A1F] animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="h-2 w-2 rounded-full bg-[#FF5A1F] animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="h-2 w-2 rounded-full bg-[#FF5A1F] animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+
+              {/* KPI cards skeleton */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="bg-[#FAF9F7] border border-warm-border rounded-xl p-3 flex flex-col gap-2">
+                    <div className="h-2.5 w-16 rounded bg-[#E5E1D8]" />
+                    <div className="h-6 w-20 rounded bg-[#E5E1D8]" />
+                    <div className="h-2.5 w-24 rounded bg-[#E5E1D8]/60" />
+                  </div>
+                ))}
+              </div>
+
+              {/* Factor decomposition table skeleton */}
+              <div className="border border-warm-border rounded-xl overflow-hidden bg-white shadow-2xs">
+                <div className="px-4 py-3 bg-[#FAF9F7] border-b border-warm-border flex items-center gap-2">
+                  <div className="h-4 w-4 rounded bg-[#E5E1D8]" />
+                  <div className="h-3.5 w-48 rounded bg-[#E5E1D8]" />
+                </div>
+                <div className="divide-y divide-warm-border/30">
+                  {[...Array(7)].map((_, i) => (
+                    <div key={i} className="flex items-center gap-4 px-4 py-3">
+                      <div className="h-3 rounded bg-[#E5E1D8]" style={{ width: `${60 + (i % 3) * 20}px` }} />
+                      <div className="h-3 rounded bg-[#E5E1D8] flex-1" style={{ maxWidth: `${120 + (i % 4) * 30}px` }} />
+                      <div className="h-3 w-14 rounded bg-[#E5E1D8] ml-auto" />
+                      <div className="h-3 w-14 rounded bg-[#E5E1D8]" />
+                      <div className="h-3 w-10 rounded bg-[#EBF4E8]" />
+                      <div className="h-3 w-12 rounded bg-[#FFD4C5]" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <p className="text-center text-[11px] text-warm-muted font-mono">
+                Building World Model — analysing benchmarks and optimising factors…
+              </p>
+            </div>
+          ) : (
+          <div className="flex flex-col gap-4">
           {/* Sub-view switcher: Factor Matrix vs Causal Tree */}
           <div className="flex items-center justify-between gap-2 flex-wrap shrink-0">
             <div className="flex items-center gap-1 bg-[#F4F1EC] p-1 rounded-xl border border-warm-border/60">
@@ -956,6 +1026,8 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
                 </table>
               </div>
             </>
+          )}
+          </div>
           )}
         </div>
       ) : hasValidWorkspaceTable && workspaceTable ? (

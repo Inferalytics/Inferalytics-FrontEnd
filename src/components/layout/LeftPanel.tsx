@@ -13,8 +13,10 @@ import {
   hasExplicitPipelineParams,
   buildFullScenarioPrompt,
 } from '../../lib/agentNavigation';
-import { updateWorkspaceTableWithScenario } from '../../lib/workspaceTableUtils';
+import { updateWorkspaceTableWithScenario, mergeWebTableWithFileData } from '../../lib/workspaceTableUtils';
+import type { WorkspaceTableRow } from '../../types/api';
 import type { ConversationTurn } from '../../types/api';
+import DataSourceModal from './panels/DataSourceModal';
 
 const renderFormattedText = (content: string | undefined | null, isUser = false) => {
   if (!content) return null;
@@ -381,6 +383,8 @@ export default function LeftPanel() {
     setWorkspaceTable,
     setTableWorkspaceViewMode,
     setScenarioCompare,
+    setIsAwaitingDataSelection,
+    setWorldModelSubView,
     leftSidebarOpen,
   } = useStore();
 
@@ -388,8 +392,10 @@ export default function LeftPanel() {
   const navigate = useNavigate();
   const [inputVal, setInputVal] = useState('');
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [showDataSourceModal, setShowDataSourceModal] = useState(false);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pipelineFileRef = useRef<HTMLInputElement>(null);
   const historyRef = useRef<ConversationTurn[]>([]);
 
   // Parse CSV string helper
@@ -432,6 +438,42 @@ export default function LeftPanel() {
     }
 
     return rows;
+  };
+
+  const handleModalNo = () => {
+    setShowDataSourceModal(false);
+    setIsAwaitingDataSelection(false);
+    void sendMessage('proceed_without_data');
+  };
+
+  const handleModalYes = () => {
+    pipelineFileRef.current?.click();
+    setShowDataSourceModal(false);
+    setIsAwaitingDataSelection(false);
+  };
+
+  const handlePipelineFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (pipelineFileRef.current) pipelineFileRef.current.value = '';
+
+    addMessage({ role: 'user', content: `Uploading: ${file.name}` });
+    addMessage({ role: 'ai', content: `Processing ${file.name} and combining with web benchmark data...` });
+    setIsOptimizing(true);
+
+    try {
+      const text = await file.text();
+      const parsedRows = parseCsvString(text);
+      try { await api.uploadFile(file); } catch {}
+
+      const currentTable = useStore.getState().workspaceTable;
+      if (parsedRows.length > 0 && currentTable?.columns?.length) {
+        setWorkspaceTable(mergeWebTableWithFileData(currentTable, parsedRows, file.name));
+      }
+      await sendMessage('upload_success');
+    } catch {
+      await sendMessage('upload_success');
+    }
   };
 
   const updateWorkspaceTableForScenario = (prompt: string) => {
@@ -582,6 +624,9 @@ export default function LeftPanel() {
 
       const toolsUsed = res.tools_used || [];
       const flow = detectFlow(toolsUsed);
+      const pipelineStep = res.pipeline_step ?? null;
+      const uiCmd = res.ui_command?.action ?? null;
+      const showUploadModal = uiCmd === 'render_upload_modal' || pipelineStep === 'awaiting_file_decision';
 
       const wm = res.world_model ?? null;
       if (wm) addWorldModel(wm);
@@ -591,6 +636,14 @@ export default function LeftPanel() {
       }
       if (res?.forecast?.comparison) {
         setScenarioCompare(res.forecast.comparison);
+      }
+
+      if (showUploadModal) {
+        // Don't show reply text — the modal IS the prompt
+        setTableWorkspaceViewMode('grid');
+        setIsAwaitingDataSelection(true);
+        setShowDataSourceModal(true);
+        return;
       }
 
       addMessage({ role: 'ai', content: replyContent });
@@ -618,9 +671,14 @@ export default function LeftPanel() {
         } catch {}
       }
 
-      const isExplicitWorldModelRequest = userText.toLowerCase().includes('world model') || userText.toLowerCase().includes('causal tree') || userText.toLowerCase().includes('driver matrix');
-      if (isExplicitWorldModelRequest) {
+      if (pipelineStep === 'world_model_ready') {
         setTableWorkspaceViewMode('world_model');
+        setWorldModelSubView('tree');
+      } else {
+        const isExplicitWorldModelRequest = userText.toLowerCase().includes('world model') || userText.toLowerCase().includes('causal tree') || userText.toLowerCase().includes('driver matrix');
+        if (isExplicitWorldModelRequest) {
+          setTableWorkspaceViewMode('world_model');
+        }
       }
 
       // If user is not on conversation tab, navigate to the page that shows this turn's result
@@ -709,6 +767,12 @@ export default function LeftPanel() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Capture existing web benchmark data BEFORE clearing state
+    const existingWebTable = useStore.getState().workspaceTable;
+    const hasWebData = existingWebTable?.rows?.some(
+      r => typeof r.id === 'string' && r.id.startsWith('web_')
+    ) ?? false;
+
     try {
       setIsOptimizing(true);
       useStore.setState({
@@ -742,31 +806,41 @@ export default function LeftPanel() {
         const directVisualTable = buildVisualTableFromContent(parsedRows, file.name);
         setVisualTable(directVisualTable);
 
-        const keys = Object.keys(parsedRows[0]);
-        const itemKey = keys.find(k => ['item', 'period', 'quarter', 'year', 'date', 'region', 'segment', 'metric', 'indicator', 'name'].includes(k.toLowerCase())) || keys[0];
-        const valKeys = keys.filter(k => k !== itemKey);
+        if (hasWebData && existingWebTable) {
+          // Merge file data below the existing web benchmark data
+          setWorkspaceTable(mergeWebTableWithFileData(existingWebTable, parsedRows, file.name));
+        } else {
+          // No web data — build a standalone file workspace table
+          const keys = Object.keys(parsedRows[0]);
+          const itemKey = keys.find(k => ['item', 'period', 'quarter', 'year', 'date', 'region', 'segment', 'metric', 'indicator', 'name'].includes(k.toLowerCase())) || keys[0];
+          const valKeys = keys.filter(k => k !== itemKey);
+          const safeBase = file.name.replace(/[^a-z0-9]/gi, '_').replace(/\.[^.]+$/, '').toLowerCase();
 
-        const realCols: import('../../types/api').WorkspaceTableColumn[] = [
-          { id: 'item', name: itemKey.charAt(0).toUpperCase() + itemKey.slice(1), type: 'text' },
-          ...valKeys.map(k => ({
-            id: k,
-            name: k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-            type: (typeof parsedRows[0][k] === 'number' ? 'number' : typeof parsedRows[0][k] === 'boolean' ? 'boolean' : 'text') as any,
-          })),
-        ];
-
-        const realRows = parsedRows.map((r, idx) => ({
-          id: `rec-${idx}`,
-          item: String(r[itemKey] ?? `Record ${idx + 1}`),
-          ...r,
-        }));
-
-        setWorkspaceTable({
-          columns: realCols,
-          rows: realRows,
-          version: 1,
-          updated_at: new Date().toISOString(),
-        });
+          setWorkspaceTable({
+            columns: [
+              { id: 'item', name: itemKey.charAt(0).toUpperCase() + itemKey.slice(1), type: 'text' },
+              ...valKeys.map(k => ({
+                id: `file_${k}`,
+                name: k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                type: 'mixed' as const,
+              })),
+            ],
+            rows: [
+              { id: `_sep_file_${safeBase}`, item: `── Uploaded File: ${file.name} ──`, _type: 'separator' },
+              ...parsedRows.map((r, idx) => {
+                const label = String(r[itemKey] ?? `Record ${idx + 1}`);
+                const row: WorkspaceTableRow = {
+                  id: `file_${safeBase}_${label.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${idx}`,
+                  item: label,
+                };
+                valKeys.forEach(k => { row[`file_${k}`] = r[k]; });
+                return row;
+              }),
+            ],
+            version: 1,
+            updated_at: new Date().toISOString(),
+          });
+        }
       }
 
       setTableWorkspaceViewMode('grid');
@@ -1087,6 +1161,16 @@ export default function LeftPanel() {
           </div>
         </div>
       </div>
+      <input
+        ref={pipelineFileRef}
+        type="file"
+        accept=".csv,.xlsx,.xls,.json"
+        className="hidden"
+        onChange={handlePipelineFileInput}
+      />
+      {showDataSourceModal && (
+        <DataSourceModal onYes={handleModalYes} onNo={handleModalNo} />
+      )}
     </aside>
   );
 }

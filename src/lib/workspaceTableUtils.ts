@@ -275,3 +275,63 @@ export function updateWorkspaceTableWithScenario(
 
   return null;
 }
+
+/**
+ * Merge an existing web-benchmark workspace table with rows parsed from an uploaded CSV file.
+ * File rows are appended below a separator row, with column IDs prefixed "file_".
+ */
+export function mergeWebTableWithFileData(
+  webTable: WorkspaceTable,
+  parsedRows: Record<string, any>[],
+  filename: string
+): WorkspaceTable {
+  if (!parsedRows || parsedRows.length === 0) return webTable;
+
+  const keys = Object.keys(parsedRows[0]);
+  const itemKey =
+    keys.find(k =>
+      ['item', 'period', 'quarter', 'year', 'date', 'region', 'segment',
+        'metric', 'indicator', 'name', 'category', 'product'].includes(k.toLowerCase())
+    ) || keys[0];
+  const valKeys = keys.filter(k => k !== itemKey);
+
+  const existingIds = new Set(webTable.columns.map(c => c.id));
+  const newFileCols: WorkspaceTableColumn[] = valKeys
+    .map(k => ({
+      id: `file_${k}`,
+      name: k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      type: 'mixed' as const,
+    }))
+    .filter(c => !existingIds.has(c.id));
+
+  const mergedColumns: WorkspaceTableColumn[] = [...webTable.columns, ...newFileCols];
+
+  const safeName = filename.replace(/[^a-z0-9.]/gi, '_');
+  const safeBase = safeName.replace(/\.[^.]+$/, '').toLowerCase();
+
+  const fileSepRow: WorkspaceTableRow = {
+    id: `_sep_file_${safeName}`,
+    item: `── Uploaded File: ${filename} ──`,
+    _type: 'separator',
+  };
+
+  const fileDataRows: WorkspaceTableRow[] = parsedRows.map((r, idx) => {
+    const label = String(r[itemKey] ?? `Row ${idx + 1}`);
+    const safeLabel = label.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const rowObj: WorkspaceTableRow = {
+      id: `file_${safeBase}_${safeLabel}_${idx}`,
+      item: label,
+    };
+    valKeys.forEach(k => {
+      rowObj[`file_${k}`] = r[k];
+    });
+    return rowObj;
+  });
+
+  return {
+    columns: mergedColumns,
+    rows: [...webTable.rows, fileSepRow, ...fileDataRows],
+    version: (webTable.version || 1) + 1,
+    updated_at: new Date().toISOString(),
+  };
+}

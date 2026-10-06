@@ -12,12 +12,15 @@ const FORECAST_COMPARE_TOOLS = new Set([
 ]);
 
 // Tools that indicate an optimisation run → world-model
+// NOTE: collect_web_data is intentionally EXCLUDED — web data collection is an
+// intermediate step in the interactive flow, not a signal that the world model
+// is ready. Including it caused the tab to switch prematurely when the backend
+// returned pipeline_step: null and the fallback logic fired.
 const WORLD_MODEL_TOOLS = new Set([
   'run_optimization', 'run_scenario',
   'run_full_pipeline', 'run_pipeline', 'full_pipeline', 'optimize',
   'run_newton_raphson', 'newton_raphson',
   'run_complete_scenario', // Flow C — always includes optimization
-  'collect_web_data',
   'update_world_model_entry',
 ]);
 

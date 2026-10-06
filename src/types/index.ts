@@ -165,6 +165,12 @@ export interface GlobalState {
   setWorkspaceTable: (table: import('./api').WorkspaceTable | null) => void;
   tableWorkspaceViewMode: 'grid' | 'world_model' | 'compare';
   setTableWorkspaceViewMode: (mode: 'grid' | 'world_model' | 'compare') => void;
+  worldModelLoading: boolean;
+  setWorldModelLoading: (loading: boolean) => void;
+  isAwaitingDataSelection: boolean;
+  setIsAwaitingDataSelection: (v: boolean) => void;
+  worldModelSubView: 'matrix' | 'tree';
+  setWorldModelSubView: (v: 'matrix' | 'tree') => void;
 
   // Per-batch Setup & Dimension State
   perBatchSetups: Record<string, SetupState>;

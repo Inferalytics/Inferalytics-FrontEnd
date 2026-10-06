@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Paperclip, Send, Loader2, ArrowRight, RefreshCw, Bot, User } from 'lucide-react';
+import { Sparkles, Paperclip, Send, Loader2, ArrowRight, RefreshCw, Bot } from 'lucide-react';
 import { useUser } from '@clerk/clerk-react';
 import { useStore, buildVisualTableFromContent } from '../../../store/useStore';
 import api from '../../../api';
-import type { ConversationTurn } from '../../../types/api';
-import { updateWorkspaceTableWithScenario } from '../../../lib/workspaceTableUtils';
+import type { ConversationTurn, WorkspaceTableRow } from '../../../types/api';
+import { updateWorkspaceTableWithScenario, mergeWebTableWithFileData } from '../../../lib/workspaceTableUtils';
+import { getRouteForTools } from '../../../lib/agentNavigation';
 import VisualTableWorkspace from './VisualTableWorkspace';
+import DataSourceModal from './DataSourceModal';
 
 const renderFormattedText = (content: string, isUser = false) => {
   if (!content) return null;
@@ -367,11 +369,13 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
     workspaceTable,
     setWorkspaceTable,
     setTableWorkspaceViewMode,
+    setWorldModelLoading,
+    setIsAwaitingDataSelection,
     addWorldModel,
     setScenarioCompare,
   } = useStore();
 
-  const [talkMessages, setTalkMessages] = useState<{ sender: 'ai' | 'user'; text: string }[]>([]);
+  const [talkMessages, setTalkMessages] = useState<{ sender: 'ai' | 'user'; text: string; action?: string }[]>([]);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [isTableVisible, setIsTableVisible] = useState(false);
   const [talkInputText, setTalkInputText] = useState('');
@@ -380,6 +384,32 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<ConversationTurn[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pipelineFileRef = useRef<HTMLInputElement>(null);
+  const [pipelineStage, setPipelineStage] = useState<'idle' | 'awaiting_upload_decision' | 'building_world_model'>('idle');
+  const [showDataSourceModal, setShowDataSourceModal] = useState(false);
+  // Pending world-model navigation: set to URL string to trigger auto-redirect
+  const [pendingWorldModelNav, setPendingWorldModelNav] = useState<string | null>(null);
+
+  // Drive world-model canvas redirect via useEffect so it survives React batching
+  useEffect(() => {
+    if (!pendingWorldModelNav) return;
+    // Show "opening canvas tree" notification after 1.5 s
+    const msgTimer = setTimeout(() => {
+      setTalkMessages(prev => [
+        ...prev,
+        { sender: 'ai' as const, text: '✅ World model is ready. Opening canvas tree now...' },
+      ]);
+    }, 1500);
+    // Navigate after 3.5 s so user can see combined spreadsheet first
+    const navTimer = setTimeout(() => {
+      navigate(pendingWorldModelNav);
+      setPendingWorldModelNav(null);
+    }, 3500);
+    return () => {
+      clearTimeout(msgTimer);
+      clearTimeout(navTimer);
+    };
+  }, [pendingWorldModelNav, navigate]);
 
   // Sync messages directly with active batch's conversation from useStore
   useEffect(() => {
@@ -471,13 +501,19 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
     setChatLoading(true);
     triggerToast(`Ingesting ${file.name}...`);
 
+    // Capture any existing web benchmark data BEFORE clearing state
+    const existingWebTable = useStore.getState().workspaceTable;
+    const hasWebData = existingWebTable?.rows?.some(
+      r => typeof r.id === 'string' && r.id.startsWith('web_')
+    ) ?? false;
+
     // 1. Post user message immediately in chat
     setTalkMessages(prev => [
       ...prev,
       { sender: 'user', text: `Uploaded dataset: ${file.name}` }
     ]);
 
-    // 2. Immediately clear old workspace data so no leftover data is shown while uploading
+    // 2. Clear old workspace data (preserve web table reference captured above)
     useStore.setState({
       worldModels: [],
       optimisationResult: null,
@@ -516,31 +552,41 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
         const directVisualTable = buildVisualTableFromContent(parsedRows, file.name);
         setVisualTable(directVisualTable);
 
-        const keys = Object.keys(parsedRows[0]);
-        const itemKey = keys.find(k => ['item', 'period', 'quarter', 'year', 'date', 'region', 'segment', 'metric', 'indicator', 'name'].includes(k.toLowerCase())) || keys[0];
-        const valKeys = keys.filter(k => k !== itemKey);
+        if (hasWebData && existingWebTable) {
+          // Merge file data below the existing web benchmark data
+          setWorkspaceTable(mergeWebTableWithFileData(existingWebTable, parsedRows, file.name));
+        } else {
+          // No web data — build a standalone file workspace table
+          const keys = Object.keys(parsedRows[0]);
+          const itemKey = keys.find(k => ['item', 'period', 'quarter', 'year', 'date', 'region', 'segment', 'metric', 'indicator', 'name'].includes(k.toLowerCase())) || keys[0];
+          const valKeys = keys.filter(k => k !== itemKey);
+          const safeBase = file.name.replace(/[^a-z0-9]/gi, '_').replace(/\.[^.]+$/, '').toLowerCase();
 
-        const realCols: import('../../../types/api').WorkspaceTableColumn[] = [
-          { id: 'item', name: itemKey.charAt(0).toUpperCase() + itemKey.slice(1), type: 'text' },
-          ...valKeys.map(k => ({
-            id: k,
-            name: k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-            type: (typeof parsedRows[0][k] === 'number' ? 'number' : typeof parsedRows[0][k] === 'boolean' ? 'boolean' : 'text') as any,
-          }))
-        ];
-
-        const realRows = parsedRows.map((r, idx) => ({
-          id: `rec-${idx}`,
-          item: String(r[itemKey] ?? `Record ${idx + 1}`),
-          ...r,
-        }));
-
-        setWorkspaceTable({
-          columns: realCols,
-          rows: realRows,
-          version: 1,
-          updated_at: new Date().toISOString()
-        });
+          setWorkspaceTable({
+            columns: [
+              { id: 'item', name: itemKey.charAt(0).toUpperCase() + itemKey.slice(1), type: 'text' },
+              ...valKeys.map(k => ({
+                id: `file_${k}`,
+                name: k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                type: 'mixed' as const,
+              })),
+            ],
+            rows: [
+              { id: `_sep_file_${safeBase}`, item: `── Uploaded File: ${file.name} ──`, _type: 'separator' },
+              ...parsedRows.map((r, idx) => {
+                const label = String(r[itemKey] ?? `Record ${idx + 1}`);
+                const row: WorkspaceTableRow = {
+                  id: `file_${safeBase}_${label.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${idx}`,
+                  item: label,
+                };
+                valKeys.forEach(k => { row[`file_${k}`] = r[k]; });
+                return row;
+              }),
+            ],
+            version: 1,
+            updated_at: new Date().toISOString(),
+          });
+        }
       }
       
       setTableWorkspaceViewMode('grid');
@@ -715,6 +761,89 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
     }
   };
 
+  // ── Pipeline handlers — backend drives state via pipeline_step in AgentResponse ──
+
+  const handlePipelineNoUpload = () => {
+    setShowDataSourceModal(false);
+    setIsAwaitingDataSelection(false);
+    setPipelineStage('idle');
+    setTableWorkspaceViewMode('world_model');
+    setWorldModelLoading(true);
+    void sendMessage('proceed_without_data');
+  };
+
+  const handlePipelineYesUpload = () => {
+    // Click the file input first (must stay in the synchronous user-gesture context)
+    // then close the modal so the ref stays stable when the native dialog opens.
+    pipelineFileRef.current?.click();
+    setShowDataSourceModal(false);
+    setIsAwaitingDataSelection(false);
+    setPipelineStage('idle');
+  };
+
+  const handlePipelineFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (pipelineFileRef.current) pipelineFileRef.current.value = '';
+
+    setChatLoading(true);
+    setTalkMessages(prev => [
+      ...prev,
+      { sender: 'user', text: `Uploading: ${file.name}` },
+      { sender: 'ai', text: `Processing ${file.name} and combining with web benchmark data...` },
+    ]);
+    addMessage({ role: 'user', content: `Upload: ${file.name}` });
+
+    try {
+      const text = await file.text();
+      const parsedRows = parseCsvString(text);
+      try { await api.uploadFile(file); } catch (uploadErr) { console.warn('Upload notice:', uploadErr); }
+
+      const currentTable = useStore.getState().workspaceTable;
+      if (parsedRows.length > 0) {
+        if (currentTable?.columns?.length) {
+          setWorkspaceTable(mergeWebTableWithFileData(currentTable, parsedRows, file.name));
+        } else {
+          const keys = Object.keys(parsedRows[0]);
+          const itemKey = keys.find(k =>
+            ['item','period','quarter','year','date','region','segment','metric','indicator','name','category','product']
+            .includes(k.toLowerCase())
+          ) || keys[0];
+          const valKeys = keys.filter(k => k !== itemKey);
+          const safeBase = file.name.replace(/[^a-z0-9]/gi, '_').replace(/\.[^.]+$/, '').toLowerCase();
+          setWorkspaceTable({
+            columns: [
+              { id: 'item', name: itemKey, type: 'text' },
+              ...valKeys.map(k => ({ id: `file_${k}`, name: k.replace(/_/g, ' '), type: 'mixed' as const })),
+            ],
+            rows: [
+              { id: `_sep_file_${safeBase}`, item: `── Uploaded File: ${file.name} ──`, _type: 'separator' },
+              ...parsedRows.map((r, idx) => {
+                const label = String(r[itemKey] ?? `Row ${idx + 1}`);
+                const row: WorkspaceTableRow = {
+                  id: `file_${safeBase}_${label.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${idx}`,
+                  item: label,
+                };
+                valKeys.forEach(k => { row[`file_${k}`] = r[k]; });
+                return row;
+              }),
+            ],
+            version: 1,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      }
+      // Show world model loading skeleton but do NOT switch tab yet —
+      // the tab switches only after the backend responds with world_model_ready.
+      setWorldModelLoading(true);
+      await sendMessage('upload_success');
+    } catch (err) {
+      console.warn('Pipeline file upload error:', err);
+      setWorldModelLoading(true);
+      await sendMessage('upload_success');
+    }
+  };
+
   const sendMessage = async (userMsg: string) => {
     setHasInteracted(true);
     setIsTableVisible(true);
@@ -726,15 +855,16 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
     const conversationalAdvice = generateConversationalAdvice(userMsg);
     updateWorkspaceTableForScenario(userMsg);
 
-    // Default to visual data table workspace
-    const isExplicitWorldModelRequest = userMsg.toLowerCase().includes('world model') || userMsg.toLowerCase().includes('causal tree') || userMsg.toLowerCase().includes('driver matrix');
-    setTableWorkspaceViewMode(isExplicitWorldModelRequest ? 'world_model' : 'grid');
+    // Tab switching is driven exclusively by pipeline_step signals from the backend.
+    // Never auto-switch based on message content — that causes premature World Model display.
 
     try {
       const batchId = await ensureChatBatch();
 
       let finalReply = conversationalAdvice;
       let hasComparison = false;
+      let pipelineStep: string | null = null;
+      let uiCommand: string | null = null;
       try {
         const res = await api.agentChat({
           message: userMsg,
@@ -747,19 +877,53 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
           finalReply = cleanedReply;
         }
 
+        pipelineStep = res?.pipeline_step ?? null;
+        uiCommand = res?.ui_command?.action ?? null;
+
+        // Fallback: if backend omits pipeline_step but tools indicate world-model, infer redirect
+        if (!pipelineStep) {
+          const inferredRoute = getRouteForTools(res?.tools_used);
+          if (inferredRoute === '/dashboard/world-model') {
+            pipelineStep = 'world_model_ready';
+          }
+        }
+
         if (res?.world_model) {
           addWorldModel(res.world_model);
-          // A completed optimization scenario is what WorldModelCompareView
-          // renders from (via the worldModels array) — surface it immediately
-          // instead of leaving the user on the plain grid.
           hasComparison = true;
         }
         if (res?.workspace_table && res.workspace_table.columns && res.workspace_table.columns.length > 0) {
-          setWorkspaceTable(res.workspace_table);
-          // A pure synthesis reply (e.g. "finalize your recommendation") can
-          // return tools_used: [] and world_model: null, but still carry a
-          // merged scenario/forecast matrix worth surfacing on its own.
-          if (res.workspace_table.columns.some(c => c.id.startsWith('scenario') || c.id.startsWith('forecast'))) {
+          const backendTable = res.workspace_table;
+          const currentTable = useStore.getState().workspaceTable;
+
+          // If the current table has web benchmark rows but the backend response doesn't,
+          // restore web rows at the top so they aren't lost after run_full_pipeline.
+          const backendHasWebRows = backendTable.rows?.some(
+            r => typeof r.id === 'string' && r.id.startsWith('web_')
+          );
+          const currentWebRows = currentTable?.rows?.filter(
+            r => typeof r.id === 'string' && (r.id.startsWith('web_') || r.id.startsWith('_sep_web'))
+          ) ?? [];
+          const currentWebCols = currentTable?.columns?.filter(c => c.id.startsWith('web_')) ?? [];
+
+          if (!backendHasWebRows && currentWebRows.length > 0) {
+            const mergedCols = [
+              ...backendTable.columns.filter(bc => !currentWebCols.some(wc => wc.id === bc.id)),
+              ...currentWebCols,
+            ];
+            setWorkspaceTable({
+              ...backendTable,
+              columns: mergedCols,
+              rows: [...currentWebRows, ...backendTable.rows],
+            });
+          } else {
+            setWorkspaceTable(backendTable);
+          }
+          // Always show spreadsheet when web or file data arrives (unless world model is loading)
+          if (!useStore.getState().worldModelLoading) {
+            setTableWorkspaceViewMode('grid');
+          }
+          if (backendTable.columns.some(c => c.id.startsWith('scenario') || c.id.startsWith('forecast'))) {
             hasComparison = true;
           }
         }
@@ -767,9 +931,6 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
           setScenarioCompare(res.forecast.comparison);
           hasComparison = true;
         }
-        // "Compare all scenarios" reads existing scenarios rather than
-        // creating a new one, so res.world_model is null and neither check
-        // above fires even though worldModels already has 2+ entries to show.
         if (res?.tools_used?.some(t => t.toLowerCase().includes('compare'))) {
           hasComparison = true;
         }
@@ -783,14 +944,45 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
         { role: 'assistant', content: finalReply },
       ];
 
-      setTalkMessages(prev => [...prev, { sender: 'ai', text: finalReply }]);
-      addMessage({ role: 'ai', content: finalReply });
-      setTableWorkspaceViewMode(hasComparison ? 'compare' : (isExplicitWorldModelRequest ? 'world_model' : 'grid'));
+      // Drive pipeline UI from backend signals.
+      // Accept both the new ui_command and the legacy pipeline_step so either backend version works.
+      const showUploadModal = uiCommand === 'render_upload_modal' || pipelineStep === 'awaiting_file_decision';
+      if (showUploadModal) {
+        // Don't render the reply as a chat bubble — the modal IS the UI.
+        // Show the spreadsheet behind the modal so web benchmarks are visible.
+        setTableWorkspaceViewMode('grid');
+        setWorldModelLoading(false);
+        setShowDataSourceModal(true);
+        setIsAwaitingDataSelection(true);
+        setIsTableVisible(true);
+        setHasInteracted(true);
+      } else if (pipelineStep === 'awaiting_file_upload') {
+        setPipelineStage('awaiting_upload_decision');
+        setTalkMessages(prev => [...prev, { sender: 'ai', text: finalReply, action: 'upload_prompt' }]);
+        addMessage({ role: 'ai', content: finalReply });
+        // Auto-open file picker so user can upload immediately
+        setTimeout(() => pipelineFileRef.current?.click(), 400);
+      } else if (pipelineStep === 'world_model_ready') {
+        setPipelineStage('idle');
+        setWorldModelLoading(false);
+        setTableWorkspaceViewMode('world_model');
+        setTalkMessages(prev => [...prev, { sender: 'ai', text: finalReply }]);
+        addMessage({ role: 'ai', content: finalReply });
+      } else {
+        setTalkMessages(prev => [...prev, { sender: 'ai', text: finalReply }]);
+        addMessage({ role: 'ai', content: finalReply });
+      }
+      // Only switch to compare for multi-scenario results; never auto-switch to world_model here.
+      // Upload modal cases excluded so the modal shows over the current tab.
+      if (pipelineStep !== 'world_model_ready' && !showUploadModal && !useStore.getState().worldModelLoading) {
+        setTableWorkspaceViewMode(hasComparison ? 'compare' : 'grid');
+      }
       setIsTableVisible(true);
       setHasInteracted(true);
     } catch (err: any) {
       const detail = err?.response?.data?.detail || err?.message || 'Agent chat failed';
       console.warn('Backend agent chat error:', detail);
+      setWorldModelLoading(false);
       const fallbackReply = conversationalAdvice || `I received your prompt: "${userMsg}". Data Ops Agent is processing your request.`;
       setTalkMessages(prev => [...prev, { sender: 'ai', text: fallbackReply }]);
       addMessage({ role: 'ai', content: fallbackReply });
@@ -953,6 +1145,12 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
                     <div className="text-[13.5px] text-warm-text leading-relaxed bg-[#FAF9F7] p-4 rounded-2xl rounded-tl-sm border border-warm-border shadow-2xs">
                       {renderFormattedText(msg.text)}
                     </div>
+                    {msg.action === 'upload_prompt' && pipelineStage === 'awaiting_upload_decision' && !chatLoading && (
+                      /* Legacy fallback — modal is now shown instead; this renders only if modal state is missing */
+                      <div className="mt-1 p-2.5 bg-[#FFF2EE] border border-[#FFD4C5] rounded-xl text-[11.5px] text-[#FF5A1F] font-semibold font-mono text-center">
+                        Waiting for your data source selection…
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex flex-col gap-1 text-right items-end">
@@ -1003,6 +1201,14 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
             type="file"
             ref={fileInputRef}
             onChange={handleFileUpload}
+            accept=".csv,.xlsx,.xls,.json"
+            className="hidden"
+          />
+          {/* Hidden pipeline file input */}
+          <input
+            type="file"
+            ref={pipelineFileRef}
+            onChange={handlePipelineFileInput}
             accept=".csv,.xlsx,.xls,.json"
             className="hidden"
           />
@@ -1113,6 +1319,19 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
                   <div className="text-[12.5px] text-warm-text leading-relaxed bg-[#FAF9F7] p-3.5 rounded-2xl rounded-tl-sm border border-warm-border shadow-2xs">
                     {renderFormattedText(msg.text)}
                   </div>
+                  {msg.action === 'upload_prompt' && pipelineStage === 'awaiting_upload_decision' && !chatLoading && (
+                    <div className="mt-1 p-2.5 bg-white border border-[#E5E1D8] rounded-xl shadow-xs flex flex-col gap-2">
+                      <span className="text-[10px] font-mono font-bold text-warm-muted uppercase tracking-wide">Add your own data?</span>
+                      <div className="flex gap-2">
+                        <button onClick={handlePipelineYesUpload} className="flex-1 py-1.5 rounded-lg bg-[#FF5A1F] text-white text-[11.5px] font-bold hover:opacity-90 transition-all cursor-pointer shadow-xs">
+                          Yes — Upload CSV
+                        </button>
+                        <button onClick={handlePipelineNoUpload} className="flex-1 py-1.5 rounded-lg border border-[#E5E1D8] text-warm-text text-[11.5px] font-semibold hover:bg-[#FAF9F7] transition-all cursor-pointer">
+                          No — Web Only
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col gap-1 text-right items-end">
@@ -1167,6 +1386,14 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
           accept=".csv,.xlsx,.xls,.json"
           className="hidden"
         />
+        {/* Hidden pipeline file input */}
+        <input
+          type="file"
+          ref={pipelineFileRef}
+          onChange={handlePipelineFileInput}
+          accept=".csv,.xlsx,.xls,.json"
+          className="hidden"
+        />
 
         {/* Input Composer */}
         <form
@@ -1187,14 +1414,15 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
               type="text"
               value={talkInputText}
               onChange={(e) => setTalkInputText(e.target.value)}
-              placeholder="Ask a question or test 'what-if'..."
-              className="w-full h-9 pl-3 pr-10 border border-warm-border rounded-xl text-[12.5px] bg-[#FAF9F7]/60 text-warm-text focus:outline-none focus:border-[#FF5A1F] font-sans transition-all"
+              placeholder={showDataSourceModal ? 'Select a data source above to continue…' : "Ask a question or test 'what-if'..."}
+              disabled={showDataSourceModal}
+              className="w-full h-9 pl-3 pr-10 border border-warm-border rounded-xl text-[12.5px] bg-[#FAF9F7]/60 text-warm-text focus:outline-none focus:border-[#FF5A1F] font-sans transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               type="submit"
-              disabled={!talkInputText.trim() || chatLoading}
+              disabled={!talkInputText.trim() || chatLoading || showDataSourceModal}
               className={`absolute right-1 top-1 h-7 w-7 rounded-lg flex items-center justify-center transition-all ${
-                talkInputText.trim() && !chatLoading
+                talkInputText.trim() && !chatLoading && !showDataSourceModal
                   ? 'bg-[#FF5A1F] text-white hover:opacity-90 cursor-pointer shadow-xs'
                   : 'bg-transparent text-warm-muted pointer-events-none'
               }`}
@@ -1216,6 +1444,14 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
           triggerToast={triggerToast}
         />
       </div>
+
+      {/* ── Data Source Modal — blocks all interaction until user picks Yes or No ── */}
+      {showDataSourceModal && (
+        <DataSourceModal
+          onYes={handlePipelineYesUpload}
+          onNo={handlePipelineNoUpload}
+        />
+      )}
 
     </div>
   );

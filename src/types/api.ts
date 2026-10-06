@@ -682,4 +682,8 @@ export interface AgentResponse {
   world_model: WorldModel | null;
   forecast: ForecastPipelineResult | null;
   workspace_table?: WorkspaceTable | null;
+  /** Pipeline step signal from backend — drives interactive web→upload→world-model flow */
+  pipeline_step?: 'awaiting_file_decision' | 'awaiting_file_upload' | 'world_model_ready' | null;
+  /** Explicit UI command from backend — e.g. show the data-source modal */
+  ui_command?: { action: 'render_upload_modal' | string; target?: string } | null;
 }

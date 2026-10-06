@@ -545,6 +545,14 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
   setTableWorkspaceViewMode: (mode: 'grid' | 'world_model' | 'compare') => {
     set({ tableWorkspaceViewMode: mode });
   },
+  worldModelLoading: false,
+  setWorldModelLoading: (loading: boolean) => {
+    set({ worldModelLoading: loading });
+  },
+  isAwaitingDataSelection: false,
+  setIsAwaitingDataSelection: (v: boolean) => { set({ isAwaitingDataSelection: v }); },
+  worldModelSubView: 'matrix' as 'matrix' | 'tree',
+  setWorldModelSubView: (v: 'matrix' | 'tree') => { set({ worldModelSubView: v }); },
 
   setScreen: (screen: number) => {
     set({
@@ -641,6 +649,8 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
       optimisationResult: null,
       scenarios: [],
       provenanceConversations: {},
+      // Always land on Spreadsheet when switching batches — World Model is earned by running the pipeline
+      tableWorkspaceViewMode: 'grid',
     });
 
     if (get().syncBackendState) {
@@ -884,8 +894,8 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
             ];
 
             const existingTable = get().workspaceTable;
-            const extraColumns = (existingTable?.columns || []).filter(c => 
-              c.id.startsWith('scenario') || c.id.startsWith('forecast') || c.id.startsWith('what_if') || c.id.startsWith('target') || c.id.startsWith('custom')
+            const extraColumns = (existingTable?.columns || []).filter(c =>
+              c.id.startsWith('scenario') || c.id.startsWith('forecast') || c.id.startsWith('what_if') || c.id.startsWith('target') || c.id.startsWith('custom') || c.id.startsWith('web_')
             );
 
             // Merge extra columns without duplicates
@@ -983,9 +993,13 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
               parameters: realParameters.length > 0 ? realParameters : get().setup.parameters,
             };
 
+            // Preserve web benchmark rows (from collect_web_data) at the top of the table
+            const webRows = (existingTable?.rows || []).filter(r =>
+              typeof r.id === 'string' && (r.id.startsWith('web_') || r.id.startsWith('_sep_web'))
+            );
             const updatedWsTable = mergedCols.length > 0 ? {
               columns: mergedCols,
-              rows: realRows,
+              rows: [...webRows, ...realRows],
               version: get().workspaceTable?.version ? get().workspaceTable!.version + 1 : 1,
               updated_at: new Date().toISOString(),
             } : get().workspaceTable;
@@ -1613,7 +1627,7 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
     growthRates: state.growthRates,
     dimensions: state.dimensions,
     conversation: state.conversation.filter(m => !m.isTyping).slice(-30),
-    tableWorkspaceViewMode: state.tableWorkspaceViewMode,
+    // tableWorkspaceViewMode intentionally NOT persisted — always reset to 'grid' on reload
   }),
   storage: createJSONStorage(() => ({
     getItem: (name) => {
@@ -1632,6 +1646,8 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
   // After Zustand rehydrates from localStorage, restore the active batch's specific state
   onRehydrateStorage: () => (state) => {
     if (!state || !state.activeBatchId) return;
+    // Always start on Spreadsheet regardless of what was persisted
+    state.tableWorkspaceViewMode = 'grid';
     const id = state.activeBatchId;
     
     // Restore per-batch state for the active batch

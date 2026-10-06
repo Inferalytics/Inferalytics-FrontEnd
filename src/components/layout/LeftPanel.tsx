@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useUser } from '@clerk/clerk-react';
+import { flushSync } from 'react-dom';
+import { useUser, useAuth } from '@clerk/clerk-react';
 import { useStore, buildVisualTableFromContent, setForecastPageCache } from '../../store/useStore';
 import { Sparkles, Send, RefreshCw, Paperclip, Bot, ArrowRight, Loader2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -356,6 +357,7 @@ const cleanAgentReply = (rawText: string): string => {
 
 export default function LeftPanel() {
   const { user } = useUser();
+  const { getToken } = useAuth();
   const displayName = user?.fullName || user?.firstName || user?.primaryEmailAddress?.emailAddress || 'User';
 
   const {
@@ -392,6 +394,7 @@ export default function LeftPanel() {
   const navigate = useNavigate();
   const [inputVal, setInputVal] = useState('');
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [showDataSourceModal, setShowDataSourceModal] = useState(false);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -440,6 +443,142 @@ export default function LeftPanel() {
     return rows;
   };
 
+  const streamWebBenchmarks = async (streamUrl: string) => {
+    const SKEL = 'skel_';
+
+    // If backend returns a relative URL, prepend the API base
+    const base = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+    const fullUrl = streamUrl.startsWith('http') ? streamUrl : `${base}${streamUrl}`;
+    console.log('[SSE] connecting to', fullUrl);
+
+    // Get auth token — same priority as axiosClient (stored key first, then Clerk JWT)
+    const storedKey = localStorage.getItem('ips_api_key');
+    const token = storedKey || await getToken().catch(() => null);
+    const headers: Record<string, string> = { Accept: 'text/event-stream' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    // Ensure the spreadsheet is visible immediately with skeleton rows so user sees activity
+    setTableWorkspaceViewMode('grid');
+    const PLACEHOLDER_COUNT = 8;
+    const placeholderRows: import('../../types/api').WorkspaceTableRow[] = Array.from(
+      { length: PLACEHOLDER_COUNT },
+      (_, i) => ({ id: `${SKEL}placeholder_${i}`, item: '', _type: 'skeleton' } as import('../../types/api').WorkspaceTableRow)
+    );
+    setWorkspaceTable({
+      columns: [
+        { id: 'item',        name: 'Metric',     type: 'text'   },
+        { id: 'Value',       name: 'Value',      type: 'number' },
+        { id: 'Unit',        name: 'Unit',       type: 'text'   },
+        { id: 'Domain',      name: 'Domain',     type: 'text'   },
+        { id: 'source_name', name: 'Source',     type: 'text'   },
+        { id: 'confidence',  name: 'Confidence', type: 'number' },
+      ],
+      rows: placeholderRows,
+      version: 1,
+      updated_at: new Date().toISOString(),
+    });
+
+    const applyRows = (updater: (rows: import('../../types/api').WorkspaceTableRow[]) => import('../../types/api').WorkspaceTableRow[]) => {
+      const cur = useStore.getState().workspaceTable;
+      if (!cur) return;
+      const next = { ...cur, rows: updater(cur.rows), version: cur.version + 1, updated_at: new Date().toISOString() };
+      try {
+        // flushSync bypasses React 18 automatic batching so each row paints individually
+        flushSync(() => setWorkspaceTable(next));
+      } catch {
+        setWorkspaceTable(next); // fallback if flushSync throws (edge case)
+      }
+    };
+
+    try {
+      const res = await fetch(fullUrl, { headers });
+      if (!res.ok || !res.body) throw new Error(`Stream ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let streamDone = false;
+
+      let pendingEventType = '';
+      outer: while (!streamDone) {
+        const { done, value } = await reader.read();
+        streamDone = done;
+        buf += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+
+        // SSE uses \r\n line endings; split on \n and trim \r
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? ''; // keep last incomplete line for next chunk
+
+        for (const line of lines) {
+          const trimmed = line.trim(); // trims \r from CRLF
+          if (!trimmed || trimmed.startsWith(':')) continue; // empty / SSE ping comment
+
+          // SSE "event:" line sets the type for the following "data:" line
+          if (trimmed.startsWith('event:')) {
+            pendingEventType = trimmed.slice(6).trim();
+            continue;
+          }
+
+          const raw = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed;
+          if (!raw || raw === '[DONE]') { pendingEventType = ''; continue; }
+
+          let evt: Record<string, any>;
+          try { evt = JSON.parse(raw); } catch { pendingEventType = ''; continue; }
+
+          // Use SSE event: line type first, then JSON body fallback
+          const type = pendingEventType || evt.type || evt.event || '';
+          // researching events use lowercase "metric"; benchmark events use capital "Metric"
+          const metricName: string = evt.Metric || evt.metric || '';
+          pendingEventType = ''; // consume after use
+
+          if (type === 'researching') {
+            applyRows(rows => {
+              const skelId = `${SKEL}${metricName}`;
+              if (rows.some(r => r.id === skelId)) return rows;
+              // Replace first generic placeholder → named skeleton so position is preserved
+              const phIdx = rows.findIndex(r => r.id.startsWith(`${SKEL}placeholder_`));
+              const named = { id: skelId, item: `Fetching ${metricName}…`, _type: 'skeleton' } as import('../../types/api').WorkspaceTableRow;
+              if (phIdx >= 0) { const u = [...rows]; u[phIdx] = named; return u; }
+              return [...rows, named];
+            });
+
+          } else if (type === 'benchmark') {
+            const rowId = `web_${(metricName || String(Math.random())).toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+            const row: import('../../types/api').WorkspaceTableRow = {
+              id: rowId, item: metricName,
+              Value: evt.Value, Unit: evt.Unit, Domain: evt.Domain,
+              source_name: evt.source_name, confidence: evt.confidence,
+            };
+            applyRows(rows => {
+              const without = rows.filter(r => r.id !== row.id);
+              const skelIdx = without.findIndex(r => r.id === `${SKEL}${metricName}`);
+              if (skelIdx >= 0) { const u = [...without]; u[skelIdx] = row; return u; }
+              return [...without, row];
+            });
+
+          } else if (type === 'not_found') {
+            applyRows(rows => rows.filter(r => r.id !== `${SKEL}${metricName}`));
+
+          } else if (type === 'complete' || type === 'done' || type === 'end') {
+            applyRows(rows => rows.filter(r => !r.id.startsWith(SKEL)));
+            setIsStreaming(false);
+            void sendMessage('web_data_ready', true);
+            break outer;
+          }
+        }
+      }
+
+      // Safety net: stream closed without explicit 'complete' event
+      applyRows(rows => rows.filter(r => !r.id.startsWith(SKEL)));
+      setIsStreaming(false);
+      void sendMessage('web_data_ready', true);
+    } catch (err) {
+      console.error('[stream] error:', err);
+      setIsStreaming(false);
+      void sendMessage('web_data_ready', true);
+    }
+  };
+
   const handleModalNo = () => {
     setShowDataSourceModal(false);
     setIsAwaitingDataSelection(false);
@@ -486,7 +625,7 @@ export default function LeftPanel() {
     }
   };
 
-  const sendMessage = async (userText: string) => {
+  const sendMessage = async (userText: string, silent = false) => {
     if (!userText.trim()) return;
 
     // Reactively update what-if scenario values in workspace table
@@ -587,7 +726,7 @@ export default function LeftPanel() {
     }
     // ────────────────────────────────────────────────────────────────────────
 
-    addMessage({ role: 'user', content: userText });
+    if (!silent) addMessage({ role: 'user', content: userText });
 
     try {
       setIsOptimizing(true);
@@ -636,6 +775,13 @@ export default function LeftPanel() {
       }
       if (res?.forecast?.comparison) {
         setScenarioCompare(res.forecast.comparison);
+      }
+
+      if (uiCmd === 'stream_web_data') {
+        // Don't show reply — stream rows live into the spreadsheet
+        setIsStreaming(true);
+        streamWebBenchmarks(res.ui_command!.stream_url!);
+        return;
       }
 
       if (showUploadModal) {
@@ -1075,6 +1221,14 @@ export default function LeftPanel() {
         })}
 
         {/* Animated Thinking Bubble */}
+        {isStreaming && (
+          <div className="flex flex-col gap-1 max-w-[90%] self-start animate-float-up">
+            <div className="px-3.5 py-2.5 bg-[#FFF2EE] border border-[#FFD4C5] rounded-2xl rounded-tl-sm shadow-2xs flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 text-[#FF5A1F] animate-spin shrink-0" />
+              <span className="text-[12px] font-medium text-[#FF5A1F]">Fetching benchmarks live…</span>
+            </div>
+          </div>
+        )}
         {isThinking && (
           <div className="flex flex-col gap-1 max-w-[90%] self-start animate-float-up">
             <div className="px-3.5 py-2.5 bg-[#FAF9F7] border border-warm-border text-warm-text rounded-2xl rounded-tl-sm shadow-2xs flex items-center gap-2">

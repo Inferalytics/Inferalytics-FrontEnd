@@ -50,9 +50,11 @@ export function isScenarioMetaRow(row: WorkspaceTableRow): boolean {
  */
 export type ColumnCategory = 'item' | 'web' | 'file' | 'scenario' | 'forecast' | 'meta';
 
+const WEB_BENCHMARK_COLS = new Set(['Value', 'Unit', 'Domain', 'source_name', 'confidence']);
+
 export function categorizeColumn(colId: string): ColumnCategory {
   if (colId === 'item') return 'item';
-  if (colId.startsWith('web_')) return 'web';
+  if (colId.startsWith('web_') || WEB_BENCHMARK_COLS.has(colId)) return 'web';
   if (colId.startsWith('file_')) return 'file';
   if (colId.startsWith('scenario_') || colId.startsWith('target_') || colId.startsWith('what_if_')) return 'scenario';
   if (colId.startsWith('forecast_')) return 'forecast';

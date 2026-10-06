@@ -159,7 +159,7 @@ export default function CombinedSpreadsheetTable({
               {visibleColumns.map((col, idx) => {
                 const isItem = col.id === 'item';
                 const cat = categorizeColumn(col.id);
-                const isRightAlign = cat === 'file' || cat === 'scenario' || cat === 'forecast' || col.id === 'web_value';
+                const isRightAlign = cat === 'file' || cat === 'scenario' || cat === 'forecast' || col.id === 'Value';
 
                 return (
                   <th
@@ -223,6 +223,17 @@ export default function CombinedSpreadsheetTable({
                 );
               }
 
+              // ── 1b. Skeleton row: live-streaming placeholder ──
+              if (row._type === 'skeleton') {
+                return (
+                  <tr key={row.id} className="animate-pulse">
+                    <td colSpan={visibleColumns.length} className="py-2 px-4">
+                      <div className="h-3.5 rounded bg-[#F0EDE8] w-48" />
+                    </td>
+                  </tr>
+                );
+              }
+
               // ── 2. Data Rows (Web benchmarks, File data rows, Scenario meta rows) ──
               const isWeb = isWebBenchmarkRow(row);
               const isFile = isFileDataRow(row);
@@ -271,7 +282,7 @@ export default function CombinedSpreadsheetTable({
                     const rawVal = row[col.id];
                     const cat = categorizeColumn(col.id);
                     const formatted = formatTableCellValue(rawVal, col.id);
-                    const isRightAlign = cat === 'file' || cat === 'scenario' || cat === 'forecast' || col.id === 'web_value' || formatted.isNumber;
+                    const isRightAlign = cat === 'file' || cat === 'scenario' || cat === 'forecast' || col.id === 'Value' || formatted.isNumber;
 
                     return (
                       <td
@@ -285,7 +296,7 @@ export default function CombinedSpreadsheetTable({
                             ? 'font-semibold text-[#9A3412] bg-[#FFF8F5]/60 group-hover:bg-[#FFEADB]/80'
                             : cat === 'forecast'
                             ? 'font-semibold text-[#5B50A0] bg-[#FAF9FD]/60 group-hover:bg-[#EFEAF8]/80'
-                            : isWeb && (col.id === 'web_value' || col.id === 'web_source')
+                            : isWeb && (col.id === 'Value' || col.id === 'source_name')
                             ? 'text-[#1E3A8A] font-medium'
                             : 'text-[#3D3730]'
                         } ${formatted.isMuted ? 'text-warm-muted/40 font-mono' : 'font-mono'}`}
@@ -305,7 +316,7 @@ export default function CombinedSpreadsheetTable({
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10.5px] font-sans font-medium bg-[#EBF3FF] text-[#1E40AF] border border-[#BFDBFE]">
                             {formatted.display}
                           </span>
-                        ) : col.id === 'web_unit' && !formatted.isMuted ? (
+                        ) : col.id === 'Unit' && !formatted.isMuted ? (
                           <span className="text-[11px] font-sans font-semibold text-warm-muted">
                             {formatted.display}
                           </span>

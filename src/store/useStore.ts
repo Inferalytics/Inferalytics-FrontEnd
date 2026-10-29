@@ -554,6 +554,23 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
   worldModelSubView: 'matrix' as 'matrix' | 'tree',
   setWorldModelSubView: (v: 'matrix' | 'tree') => { set({ worldModelSubView: v }); },
 
+  pipelinePhase: 'idle',
+  setPipelinePhase: (phase) => { set({ pipelinePhase: phase }); },
+  configureStep: null,
+  setConfigureStep: (state) => { set({ configureStep: state }); },
+  updateConfigureStep: (patch) => {
+    const cur = get().configureStep;
+    if (cur) set({ configureStep: { ...cur, ...patch } });
+  },
+  toggleConfigureLock: (label) => {
+    const cur = get().configureStep;
+    if (!cur || cur.submitting) return;
+    const locked = cur.locked.includes(label)
+      ? cur.locked.filter(l => l !== label)
+      : [...cur.locked, label];
+    set({ configureStep: { ...cur, locked } });
+  },
+
   setScreen: (screen: number) => {
     set({
       screen,
@@ -651,6 +668,8 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
       provenanceConversations: {},
       // Always land on Spreadsheet when switching batches — World Model is earned by running the pipeline
       tableWorkspaceViewMode: 'grid',
+      pipelinePhase: 'idle',
+      configureStep: null,
     });
 
     if (get().syncBackendState) {

@@ -1,4 +1,5 @@
 import axiosClient from './axiosClient.ts';
+import { streamAgentChat, type AgentStreamHandlers } from './agentStream.ts';
 import type {
   BatchSessionResponse,
   CreateBatchResponse,
@@ -230,10 +231,10 @@ export const api = {
   },
 
   // ─── Data Ops AI Agent ─────────────────────────────────────────────────────
-  agentChat: async (req: AgentRequest) => {
-    // Agent endpoint is explicitly mounted under /api
-    const res = await axiosClient.post<AgentResponse>('/api/data-ops-agent/chat', req);
-    return res.data;
+  // Streams over SSE (/api/data-ops-agent/chat/stream) and resolves with the final
+  // AgentResponse. Pass handlers to render text and tool progress as they arrive.
+  agentChat: async (req: AgentRequest, handlers?: AgentStreamHandlers): Promise<AgentResponse> => {
+    return streamAgentChat(req, handlers);
   },
 };
 

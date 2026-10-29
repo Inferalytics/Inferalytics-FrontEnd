@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Globe, FileSpreadsheet, Sparkles, CheckCircle2, Search, SlidersHorizontal } from 'lucide-react';
+import { Globe, FileSpreadsheet, Sparkles, CheckCircle2, Search, SlidersHorizontal, Lock, LockOpen } from 'lucide-react';
 import type { WorkspaceTable, WorkspaceTableColumn } from '../../../types/api';
 import {
   getVisibleColumns,
@@ -14,11 +14,20 @@ import {
 interface CombinedSpreadsheetTableProps {
   table: WorkspaceTable;
   triggerToast?: (msg: string) => void;
+  /** Configure step: row labels (Item values) the user may lock before optimization */
+  lockableLabels?: Set<string>;
+  lockedLabels?: Set<string>;
+  onToggleLock?: (label: string) => void;
+  lockDisabled?: boolean;
 }
 
 export default function CombinedSpreadsheetTable({
   table,
   triggerToast,
+  lockableLabels,
+  lockedLabels,
+  onToggleLock,
+  lockDisabled = false,
 }: CombinedSpreadsheetTableProps) {
   const [searchFilter, setSearchFilter] = useState('');
 
@@ -239,6 +248,9 @@ export default function CombinedSpreadsheetTable({
               const isFile = isFileDataRow(row);
               const isMeta = isScenarioMetaRow(row);
               const isEven = rIdx % 2 === 0;
+              const rowLabel = String(row.item ?? '');
+              const canLock = !!lockableLabels?.has(rowLabel);
+              const isLocked = canLock && !!lockedLabels?.has(rowLabel);
 
               return (
                 <tr
@@ -261,9 +273,30 @@ export default function CombinedSpreadsheetTable({
                         ? 'font-medium text-[#3D3730] bg-white group-hover:bg-[#FFF9F6]'
                         : 'font-medium text-[#3D3730] bg-[#FAFAF8] group-hover:bg-[#FFF9F6]'
                     }`}
-                    style={{ boxShadow: '2px 0 4px -1px rgba(0,0,0,0.05)' }}
+                    style={{
+                      boxShadow: '2px 0 4px -1px rgba(0,0,0,0.05)',
+                      ...(isLocked ? { background: '#FFF7E8' } : {}),
+                    }}
                   >
                     <div className="flex items-center gap-2">
+                      {canLock && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onToggleLock?.(rowLabel); }}
+                          disabled={lockDisabled}
+                          aria-pressed={isLocked}
+                          title={isLocked
+                            ? 'Locked — this value stays unchanged during optimization. Click to unlock.'
+                            : 'Click to keep this value unchanged during optimization'}
+                          className={`h-5 w-5 shrink-0 inline-flex items-center justify-center rounded-md border transition-all ${
+                            isLocked
+                              ? 'bg-[#FFEFD6] border-[#F5C77E] text-[#B45309] shadow-2xs'
+                              : 'bg-white border-[#E5E1D8] text-[#B5ADA3] hover:text-[#FF5A1F] hover:border-[#FFD4C5]'
+                          } ${lockDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                        >
+                          {isLocked ? <Lock className="h-3 w-3" /> : <LockOpen className="h-3 w-3" />}
+                        </button>
+                      )}
                       {isWeb && (
                         <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB]/70 shrink-0" />
                       )}
@@ -291,7 +324,7 @@ export default function CombinedSpreadsheetTable({
                         title={`${col.name || col.id}: ${formatted.display}`}
                         className={`py-2 px-3.5 text-[12px] tabular-nums border-b border-[#F2EFE8] whitespace-nowrap transition-colors cursor-pointer ${
                           isRightAlign ? 'text-right' : 'text-left'
-                        } ${
+                        } ${isLocked && cat !== 'scenario' && cat !== 'forecast' ? 'bg-[#FFFBF2]' : ''} ${
                           cat === 'scenario'
                             ? 'font-semibold text-[#9A3412] bg-[#FFF8F5]/60 group-hover:bg-[#FFEADB]/80'
                             : cat === 'forecast'
@@ -344,6 +377,9 @@ export default function CombinedSpreadsheetTable({
           <span className="hidden sm:inline">Click any cell to copy value</span>
         </div>
         <span>
+          {lockableLabels && lockableLabels.size > 0 && (
+            <span className="text-[#B45309] mr-2">{lockedLabels?.size ?? 0} Locked ·</span>
+          )}
           {displayedRows.length} Rows · {visibleColumns.length} Columns
         </span>
       </div>

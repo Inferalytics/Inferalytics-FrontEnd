@@ -22,6 +22,22 @@ export const clearStoredApiKey = () => {
   localStorage.removeItem(STORAGE_KEY);
 };
 
+/**
+ * Bearer token for requests made outside axios (e.g. fetch-based SSE streams).
+ * Same priority as the request interceptor: stored API key, then fresh Clerk JWT.
+ */
+export const getAuthToken = async (): Promise<string | null> => {
+  const storedApiKey = localStorage.getItem(STORAGE_KEY);
+  if (storedApiKey) return storedApiKey;
+  if (!getClerkToken) return null;
+  try {
+    return await getClerkToken({ skipCache: true });
+  } catch (err) {
+    console.error('Failed to get Clerk token:', err);
+    return null;
+  }
+};
+
 axiosClient.interceptors.request.use(
   async (config) => {
     // 1. Check for long-lived backend API key in localStorage (Mode 1 - Section 3 of frontend_auth.md)

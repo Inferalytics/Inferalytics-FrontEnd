@@ -667,11 +667,26 @@ export interface ConversationTurn {
   content: string;
 }
 
+/** A spreadsheet row the user can lock before optimization (label = the row's Item value). */
+export interface LockableItem {
+  label: string;
+  cells: number;
+  total: number;
+}
+
+/** Settings submitted from the Configure step; the backend applies them before optimizing. */
+export interface OptimizationSettings {
+  egr_value: number;            // 1.15 = +15%
+  growth_strategy: GrowthStrategy;
+  locked_labels: string[];
+}
+
 export interface AgentRequest {
   message: string;
   batch_id: string;
   clear_history?: boolean;
   conversation_history?: ConversationTurn[];
+  optimization_settings?: OptimizationSettings;
 }
 
 export interface AgentResponse {
@@ -683,7 +698,16 @@ export interface AgentResponse {
   forecast: ForecastPipelineResult | null;
   workspace_table?: WorkspaceTable | null;
   /** Pipeline step signal from backend — drives interactive web→upload→world-model flow */
-  pipeline_step?: 'awaiting_file_decision' | 'awaiting_file_upload' | 'world_model_ready' | null;
+  pipeline_step?: 'streaming_web_data' | 'awaiting_file_decision' | 'awaiting_file_upload' | 'awaiting_optimization_settings' | 'world_model_ready' | null;
   /** Explicit UI command from backend — e.g. show the data-source modal or stream benchmarks */
-  ui_command?: { action: 'render_upload_modal' | 'stream_web_data' | string; target?: string; stream_url?: string } | null;
+  ui_command?: {
+    action: 'render_upload_modal' | 'stream_web_data' | 'configure_optimization' | string;
+    target?: string;
+    stream_url?: string;
+    // configure_optimization
+    lockable_items?: LockableItem[];
+    locked_labels?: string[];
+    egr_value?: number | null;
+    growth_strategy?: GrowthStrategy;
+  } | null;
 }

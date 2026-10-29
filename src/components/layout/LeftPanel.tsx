@@ -18,6 +18,29 @@ import { updateWorkspaceTableWithScenario, mergeWebTableWithFileData } from '../
 import type { WorkspaceTableRow } from '../../types/api';
 import type { ConversationTurn } from '../../types/api';
 import DataSourceModal from './panels/DataSourceModal';
+import { toolProgressLabel } from '../../lib/agentStream';
+import { BUILD_WORLD_MODEL_EVENT } from './panels/ConfigureBar';
+import { useWorkspaceProgress } from './useWorkspaceProgress';
+import type { OptimizationSettings } from '../../types/api';
+import type { PipelinePhase } from '../../types';
+
+// Which pipeline step a running tool belongs to (drives the step strip)
+const TOOL_PHASE: Record<string, PipelinePhase> = {
+  collect_web_data: 'data',
+  upload_data: 'data',
+  prepare_data: 'prepare',
+  vectorise_data: 'prepare',
+  run_aggregation: 'prepare',
+  run_full_pipeline: 'optimise',
+  run_scenario: 'optimise',
+  run_optimization: 'optimise',
+  run_complete_scenario: 'optimise',
+};
+
+const STRATEGY_LABEL: Record<string, string> = {
+  balanced: 'balanced', leader_led: 'leader-led', catch_up: 'catch-up',
+  front_loaded: 'front-loaded', back_loaded: 'back-loaded',
+};
 
 const renderFormattedText = (content: string | undefined | null, isUser = false) => {
   if (!content) return null;
@@ -388,13 +411,20 @@ export default function LeftPanel() {
     setIsAwaitingDataSelection,
     setWorldModelSubView,
     leftSidebarOpen,
+    setPipelinePhase,
+    setConfigureStep,
+    updateConfigureStep,
   } = useStore();
 
   const { tab } = useParams<{ tab: string }>();
   const navigate = useNavigate();
+  const { dataRows, scenarioCount } = useWorkspaceProgress();
   const [inputVal, setInputVal] = useState('');
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  // Live agent output while a chat turn streams; replaced by the final reply when it completes
+  const [streamingReply, setStreamingReply] = useState('');
+  const [agentActivity, setAgentActivity] = useState<string | null>(null);
   const [showDataSourceModal, setShowDataSourceModal] = useState(false);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -625,9 +655,17 @@ export default function LeftPanel() {
     }
   };
 
-  const sendMessage = async (userText: string, silent = false) => {
+  const sendMessage = async (
+    userText: string,
+    silent = false,
+    opts: { optimizationSettings?: OptimizationSettings } = {},
+  ) => {
     if (!userText.trim()) return;
+    const settings = opts.optimizationSettings;
 
+    // Text-based what-if shortcuts only apply to free-typed messages, never to a
+    // Configure-step submission (its summary text mentions percentages).
+    if (!settings) {
     // Reactively update what-if scenario values in workspace table
     updateWorkspaceTableForScenario(userText);
 
@@ -642,9 +680,10 @@ export default function LeftPanel() {
     } else if (lower.includes('reset') || lower.includes('baseline')) {
       applyTableWhatIf(0, 'Baseline Model');
     }
+    }
 
     // ── Full scenario: step through Forecast → IPS Engine → World Model ─────
-    if (isFullScenarioRequest(userText)) {
+    if (!settings && isFullScenarioRequest(userText)) {
       addMessage({ role: 'user', content: userText });
       setIsOptimizing(true);
 
@@ -746,11 +785,30 @@ export default function LeftPanel() {
         }
       }
 
-      const res = await api.agentChat({
-        message: userText,
-        batch_id: targetBatchId,
-        conversation_history: historyRef.current,
-      });
+      const res = await api.agentChat(
+        {
+          message: userText,
+          batch_id: targetBatchId,
+          conversation_history: historyRef.current,
+          optimization_settings: settings,
+        },
+        {
+          onTextDelta: (text) => setStreamingReply(prev => prev + text),
+          // Text written before a tool call is preamble; show the tool's progress instead
+          onToolStart: (name) => {
+            setStreamingReply('');
+            setAgentActivity(toolProgressLabel(name));
+            const phase = TOOL_PHASE[name];
+            if (phase) setPipelinePhase(phase);
+          },
+          onToolEnd: () => setAgentActivity(null),
+          onWorkspaceTable: (table) => {
+            if (table.columns && table.columns.length > 0) setWorkspaceTable(table);
+          },
+        },
+      );
+      setStreamingReply('');
+      setAgentActivity(null);
 
       const reply = res.reply || res.error || 'No response from agent.';
       const replyContent = cleanAgentReply(reply) || reply;
@@ -777,8 +835,34 @@ export default function LeftPanel() {
         setScenarioCompare(res.forecast.comparison);
       }
 
+      if (uiCmd === 'configure_optimization') {
+        // Data is prepared — open the Configure step on the spreadsheet
+        const cmd = res.ui_command!;
+        const egr = cmd.egr_value;
+        setConfigureStep({
+          items: cmd.lockable_items ?? [],
+          locked: cmd.locked_labels ?? [],
+          egrPct: typeof egr === 'number' ? Number(((egr - 1) * 100).toFixed(2)) : (egrTarget || 10),
+          strategy: cmd.growth_strategy ?? 'balanced',
+          submitting: false,
+        });
+        setPipelinePhase('configure');
+        setTableWorkspaceViewMode('grid');
+      } else if (settings) {
+        // Submitted settings but no world model came back: let the user adjust and retry
+        if (pipelineStep !== 'world_model_ready') {
+          updateConfigureStep({ submitting: false });
+          setPipelinePhase('configure');
+        }
+      }
+      if (pipelineStep === 'world_model_ready') {
+        setConfigureStep(null);
+        setPipelinePhase('result');
+      }
+
       if (uiCmd === 'stream_web_data') {
         // Don't show reply — stream rows live into the spreadsheet
+        setPipelinePhase('data');
         setIsStreaming(true);
         streamWebBenchmarks(res.ui_command!.stream_url!);
         return;
@@ -786,6 +870,7 @@ export default function LeftPanel() {
 
       if (showUploadModal) {
         // Don't show reply text — the modal IS the prompt
+        setPipelinePhase('data');
         setTableWorkspaceViewMode('grid');
         setIsAwaitingDataSelection(true);
         setShowDataSourceModal(true);
@@ -820,11 +905,20 @@ export default function LeftPanel() {
       if (pipelineStep === 'world_model_ready') {
         setTableWorkspaceViewMode('world_model');
         setWorldModelSubView('tree');
-      } else {
+      } else if (uiCmd !== 'configure_optimization' && !settings) {
+        // Never leave the spreadsheet while the user is configuring or a build just failed
         const isExplicitWorldModelRequest = userText.toLowerCase().includes('world model') || userText.toLowerCase().includes('causal tree') || userText.toLowerCase().includes('driver matrix');
         if (isExplicitWorldModelRequest) {
           setTableWorkspaceViewMode('world_model');
         }
+      }
+
+      // The Configure step lives on the conversation spreadsheet
+      if (uiCmd === 'configure_optimization') {
+        if (tab && tab !== 'conversation') {
+          navigate(`/dashboard/conversation${activeBatchId ? `?batch=${activeBatchId}` : ''}`);
+        }
+        return;
       }
 
       // If user is not on conversation tab, navigate to the page that shows this turn's result
@@ -846,10 +940,37 @@ export default function LeftPanel() {
       console.warn('Agent call error in LeftPanel:', err);
       const detail = err?.response?.data?.detail || err?.message || 'Something went wrong. Please try again.';
       addMessage({ role: 'ai', content: `Error: ${detail}` });
+      if (settings) {
+        updateConfigureStep({ submitting: false });
+        setPipelinePhase('configure');
+      }
     } finally {
+      setStreamingReply('');
+      setAgentActivity(null);
       setIsOptimizing(false);
     }
   };
+
+  // Configure step "Build world model" → submit settings through the agent.
+  // Re-subscribed every render so the handler always calls the current sendMessage.
+  useEffect(() => {
+    const handleBuild = (e: Event) => {
+      const s = (e as CustomEvent<OptimizationSettings>).detail;
+      if (!s) return;
+      const pct = (s.egr_value - 1) * 100;
+      const lockedText = s.locked_labels.length
+        ? `${s.locked_labels.length} row${s.locked_labels.length === 1 ? '' : 's'} locked`
+        : 'nothing locked';
+      setPipelinePhase('optimise');
+      void sendMessage(
+        `Build world model: ${pct >= 0 ? '+' : ''}${Number(pct.toFixed(2))}% growth target, ${STRATEGY_LABEL[s.growth_strategy] ?? s.growth_strategy} strategy, ${lockedText}`,
+        false,
+        { optimizationSettings: s },
+      );
+    };
+    window.addEventListener(BUILD_WORLD_MODEL_EVENT, handleBuild);
+    return () => window.removeEventListener(BUILD_WORLD_MODEL_EVENT, handleBuild);
+  });
 
   // Support listening to custom events from other components (e.g. VisualTableWorkspace onWhatIfPrompt)
   useEffect(() => {
@@ -873,7 +994,7 @@ export default function LeftPanel() {
   // Auto scroll to bottom of the conversation thread
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [conversation, isOptimizing]);
+  }, [conversation, isOptimizing, streamingReply, agentActivity]);
 
   const handleSend = () => {
     if (!inputVal.trim() || isOptimizing) return;
@@ -1021,12 +1142,13 @@ export default function LeftPanel() {
   const isThinking = conversation.some((m) => m.isTyping) || isOptimizing;
 
   // Next step navigation target
-  const getNextStepInfo = () => {
+  const getNextStepInfo = (): { label: string; target: string } | null => {
     if (!tab || tab === 'conversation') {
-      return {
-        label: 'Dimensions',
-        target: `/dashboard/dimensions${activeBatchId ? `?batch=${activeBatchId}` : ''}`,
-      };
+      // The workflow happens here; only point elsewhere once there are results to see
+      const batchQ = activeBatchId ? `?batch=${activeBatchId}` : '';
+      if (scenarioCount > 0) return { label: 'Scenarios', target: `/dashboard/scenarios${batchQ}` };
+      if (dataRows > 0) return { label: 'Dimensions', target: `/dashboard/dimensions${batchQ}` };
+      return null;
     }
     if (tab === 'dimensions' || tab === 'blueprint' || tab === 'ecr-build' || tab === 'ecr-batch') {
       return {
@@ -1079,14 +1201,16 @@ export default function LeftPanel() {
         </div>
 
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => navigate(nextStep.target)}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#FFF2EE] hover:bg-[#FFE5DC] text-[#FF5A1F] text-[11px] font-bold border border-[#FFD4C5] transition-all cursor-pointer shadow-2xs"
-            title={`Proceed to ${nextStep.label}`}
-          >
-            <span>{nextStep.label}</span>
-            <ArrowRight className="h-3 w-3" />
-          </button>
+          {nextStep && (
+            <button
+              onClick={() => navigate(nextStep.target)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#FFF2EE] hover:bg-[#FFE5DC] text-[#FF5A1F] text-[11px] font-bold border border-[#FFD4C5] transition-all cursor-pointer shadow-2xs"
+              title={`View ${nextStep.label}`}
+            >
+              <span>{nextStep.label}</span>
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          )}
           <button
             onClick={() => {
               useStore.setState({
@@ -1229,11 +1353,19 @@ export default function LeftPanel() {
             </div>
           </div>
         )}
-        {isThinking && (
+        {/* Live streamed reply */}
+        {streamingReply && (
+          <div className="flex flex-col gap-1 max-w-[94%] self-start">
+            <div className="px-3.5 py-3 text-[12.5px] leading-relaxed shadow-xs border select-text max-w-full overflow-hidden bg-[#FAF9F7] border-warm-border text-warm-text rounded-2xl rounded-tl-sm">
+              {renderFormattedText(streamingReply, false)}
+            </div>
+          </div>
+        )}
+        {isThinking && !streamingReply && (
           <div className="flex flex-col gap-1 max-w-[90%] self-start animate-float-up">
             <div className="px-3.5 py-2.5 bg-[#FAF9F7] border border-warm-border text-warm-text rounded-2xl rounded-tl-sm shadow-2xs flex items-center gap-2">
               <Loader2 className="h-3.5 w-3.5 text-[#FF5A1F] animate-spin shrink-0" />
-              <span className="text-[12px] font-medium text-warm-muted">AI is processing request...</span>
+              <span className="text-[12px] font-medium text-warm-muted">{agentActivity ?? 'AI is processing request...'}</span>
             </div>
           </div>
         )}

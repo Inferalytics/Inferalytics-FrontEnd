@@ -1,15 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { RotateCw, Play, Pin, ChevronDown, TrendingUp, Link2, RefreshCw, Zap } from 'lucide-react';
+import { Pin, TrendingUp, Link2, RefreshCw, Zap } from 'lucide-react';
 import { useStore } from '../../../store/useStore';
 import { directBezier } from './bezierUtils';
 import { ModelType } from '../../../types';
-import type { ForecastData } from '../../../types/api';
 import { useNavigate } from 'react-router-dom';
-import api from '../../../api';
-
-interface OptimisePanelProps {
-  triggerToast: (msg: string) => void;
-}
 
 const CARD_W = 240;
 const CARD_H = 160;
@@ -166,22 +160,15 @@ const SOLVER_OPTIONS: { value: ModelType; label: string; desc: string }[] = [
   { value: 'auto',           label: 'Auto-select (Default)',        desc: 'Let AI choose method'           },
 ];
 
-export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
+export default function OptimisePanel() {
   const {
     setup,
     egrTarget,
-    setEgrTarget,
-    runOptimisation,
     model,
-    setModel,
     activeBatchId,
-    addMessage,
-    syncBackendState,
     optimisationResult,
-    setLatestForecast,
     latestForecast,
     worldModels,
-    runFullScenario,
     pipelineStage,
     visualTable,
     workspaceTable,
@@ -341,23 +328,17 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
     return conns;
   }, [dynamicDimensions]);
 
-  const [isOptimizing,    setIsOptimizing]    = useState(false);
   const [positions,       setPositions]       = useState(INITIAL_POSITIONS);
   const [connections,     setConnections]     = useState<Connection[]>(INITIAL_CONNECTIONS);
   const [pinnedIds,       setPinnedIds]       = useState<Set<string>>(new Set(['reg', 'margin']));
   const [selectedId,      setSelectedId]      = useState('rev');
   const [drag,            setDrag]            = useState<{ id: string; ox: number; oy: number } | null>(null);
   const [zoom,            setZoom]            = useState(1);
-  const [solverOpen,      setSolverOpen]      = useState(false);
-  const [forecastOpen,    setForecastOpen]    = useState(false);
-  const [forecastLoading, setForecastLoading] = useState(false);
-  const [realForecast,    setRealForecast]    = useState<ForecastData | null>(null);
-  const [forecastError,   setForecastError]   = useState<string | null>(null);
 
   // Flow C: only use latestForecast if it belongs to this batch
   const batchLatestForecast = (activeBatchId && latestForecast?.batch_id === activeBatchId)
     ? latestForecast : null;
-  const activeForecast = realForecast ?? batchLatestForecast;
+  const activeForecast = batchLatestForecast;
 
   // Only use world models from the active batch
   const batchWorldModels = activeBatchId
@@ -380,7 +361,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
           `target: ${fv}`,
           `period: ${activeForecast.target_time}`,
           ...(strategyLabel ? [`strategy: ${strategyLabel}`] : []),
-          ...(optimisationResult ? [`achieved: ${optimisationResult.egrAchieved}% ${converged ? '✓' : ''}`] : [`status: run optimisation`]),
+          ...(optimisationResult ? [`achieved: ${optimisationResult.egrAchieved}% ${converged ? '✓' : ''}`] : [`status: not optimised yet`]),
         ];
       }
       return optimisationResult
@@ -580,7 +561,7 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
             Scenario Modeling & Sensitivity Inference
           </h1>
           <p className="text-[12.5px] text-warm-muted mt-0.5">
-            Execute Newton-Raphson gradient optimization or Holt-Winters forecasting to model growth targets and sensitivity paths.
+            Results of the Newton-Raphson optimization and Holt-Winters forecasts built in the conversation.
           </p>
         </div>
 
@@ -597,40 +578,10 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
       {/* ── Controls bar ─────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3 bg-white border border-warm-border rounded-2xl shadow-card p-3 sm:p-3.5 z-40 select-none relative overflow-visible">
 
-        {/* Group 1 — EGR targets & Preset Pills */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 bg-[#FAF9F7] border border-warm-border rounded-xl px-3 py-1.5 shadow-2xs">
-            <span className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wide shrink-0 font-mono">EGR</span>
-            <input
-              type="number"
-              value={egrTarget}
-              onChange={e => setEgrTarget(Number(e.target.value))}
-              className="w-10 text-center bg-transparent border-none outline-none font-bold text-[#FF5A1F] text-[13px] font-mono focus:ring-0"
-            />
-            <span className="font-bold text-[#FF5A1F] text-[12px] font-mono">%</span>
-          </div>
-
-          <div className="hidden sm:flex items-center gap-1 bg-[#F4F1EC] p-1 rounded-xl border border-warm-border/60">
-            {[
-              { val: 0, label: 'Baseline' },
-              { val: 5, label: '+5%' },
-              { val: 10, label: '+10%' },
-              { val: 12, label: '12% Target' },
-              { val: 15, label: '+15%' },
-            ].map(pill => (
-              <button
-                key={pill.label}
-                onClick={() => setEgrTarget(pill.val)}
-                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-mono font-semibold transition-all cursor-pointer ${
-                  egrTarget === pill.val
-                    ? 'bg-[#FF5A1F] text-white shadow-xs'
-                    : 'text-warm-muted hover:text-warm-text hover:bg-white/80'
-                }`}
-              >
-                {pill.label}
-              </button>
-            ))}
-          </div>
+        {/* Group 1 — growth target used for the results (set in the Configure step) */}
+        <div className="flex items-center gap-1.5 bg-[#FAF9F7] border border-warm-border rounded-xl px-3 py-1.5 shadow-2xs">
+          <span className="text-[10.5px] font-bold text-warm-muted uppercase tracking-wide shrink-0 font-mono">EGR</span>
+          <span className="font-bold text-[#FF5A1F] text-[13px] font-mono">{egrTarget}%</span>
         </div>
 
         <span className="h-5 w-px bg-warm-border/60 shrink-0" />
@@ -640,36 +591,9 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
           Q1 → Q4 2025
         </span>
 
-        <div className="relative shrink-0">
-          <button
-            onClick={() => setSolverOpen(o => !o)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF9F7] hover:bg-warm-bg border border-warm-border rounded-xl text-[12px] font-semibold text-warm-text transition-all cursor-pointer whitespace-nowrap shadow-2xs"
-          >
-            <span>{currentSolver.label}</span>
-            <ChevronDown className="h-3.5 w-3.5 text-warm-muted" />
-          </button>
-          {solverOpen && (
-            <div className="absolute top-10 left-0 w-64 bg-white border border-warm-border rounded-2xl shadow-float p-1.5 z-[999] animate-float-up font-sans">
-              <div className="px-2.5 py-1 text-[10px] font-bold text-warm-muted uppercase tracking-wider font-mono border-b border-warm-border/50 pb-1 mb-1">
-                Optimization Engine
-              </div>
-              {SOLVER_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => { setModel(opt.value); setSolverOpen(false); }}
-                  className={`w-full text-left px-3 py-2 rounded-xl text-[11.5px] transition-colors cursor-pointer flex flex-col gap-0.5 ${
-                    model === opt.value
-                      ? 'bg-[#FFF2EE] text-[#FF5A1F] font-bold border border-[#FFD4C5]'
-                      : 'hover:bg-[#FAF9F7] text-warm-text border border-transparent'
-                  }`}
-                >
-                  <span className="font-semibold">{opt.label}</span>
-                  <span className="text-[10px] text-warm-muted font-normal">{opt.desc}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <span className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF9F7] border border-warm-border rounded-xl text-[12px] font-semibold text-warm-text whitespace-nowrap shadow-2xs shrink-0">
+          {currentSolver.label}
+        </span>
 
         <span className="h-5 w-px bg-warm-border/60 shrink-0" />
 
@@ -705,100 +629,11 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
           </button>
         )}
 
-        {/* Group 4 — action buttons (pushed right) */}
+        {/* Group 4 — view actions (pushed right). Runs happen in the conversation. */}
         <div className="flex items-center gap-2 ml-auto shrink-0">
-          <button
-            onClick={async () => {
-              try {
-                setForecastLoading(true);
-                setForecastOpen(false);
-
-                // Pass forecast request to Data Ops AI agent
-                const userPrompt = `Run forecast prediction with solver ${currentSolver.label} for batch workspace`;
-                addMessage({ role: 'user', content: userPrompt });
-
-                const agentRes = await api.agentChat({
-                  message: userPrompt,
-                  batch_id: activeBatchId || '',
-                });
-
-                let replyContent = agentRes.reply;
-                if (agentRes.tools_used && agentRes.tools_used.length > 0) {
-                  const formattedTools = agentRes.tools_used.map((t: string) => {
-                    const clean = t.replace(/_/g, ' ');
-                    return clean.charAt(0).toUpperCase() + clean.slice(1);
-                  });
-                  replyContent += `\n\n*Executed:* \`${formattedTools.join('`, `')}\``;
-                }
-
-                addMessage({ role: 'ai', content: replyContent });
-
-                // Call forecast endpoint and keep the real response for display
-                setForecastError(null);
-                const fcRes = await api.forecast();
-                setRealForecast(fcRes.data);
-                setLatestForecast(fcRes.data);
-                if (syncBackendState) {
-                  await syncBackendState();
-                }
-              } catch (err: any) {
-                setForecastError(err?.response?.data?.detail || err?.message || 'Forecast failed.');
-                console.warn('Agent forecast execution notice:', err);
-              } finally {
-                setForecastLoading(false);
-                setForecastOpen(true);
-              }
-            }}
-            disabled={forecastLoading}
-            className="flex items-center gap-1.5 px-3.5 py-2 border border-warm-border bg-white hover:bg-[#FAF9F7] rounded-xl text-[12px] font-semibold text-warm-text cursor-pointer transition-colors disabled:opacity-50 shadow-2xs"
-          >
-            {forecastLoading ? <RotateCw className="h-3.5 w-3.5 animate-spin text-[#FF5A1F]" /> : <TrendingUp className="h-3.5 w-3.5 text-warm-muted" />}
-            <span>Run Forecast</span>
-          </button>
-
-          <button
-            onClick={async () => {
-              try {
-                setIsOptimizing(true);
-
-                // Pass optimization request to Data Ops AI agent
-                const userPrompt = activeForecast
-                  ? `Run optimisation inference using ${model} solver to achieve the forecasted value of ${activeForecast.forecasted_value.toLocaleString(undefined, { maximumFractionDigits: 2 })} for period ${activeForecast.target_time} (predicted growth rate: ${activeForecast.predicted_growth_rate_percentage}). Identify the data changes, drivers, and strategies required to reach this forecast target.`
-                  : `Run optimisation inference using ${model} solver against ${egrTarget}% EGR target`;
-                addMessage({ role: 'user', content: userPrompt });
-
-                const agentRes = await api.agentChat({
-                  message: userPrompt,
-                  batch_id: activeBatchId || '',
-                });
-
-                let replyContent = agentRes.reply;
-                if (agentRes.tools_used && agentRes.tools_used.length > 0) {
-                  const formattedTools = agentRes.tools_used.map(t => {
-                    const clean = t.replace(/_/g, ' ');
-                    return clean.charAt(0).toUpperCase() + clean.slice(1);
-                  });
-                  replyContent += `\n\n*Executed:* \`${formattedTools.join('`, `')}\``;
-                }
-
-                addMessage({ role: 'ai', content: replyContent });
-
-                runOptimisation(() => {
-                  setIsOptimizing(false);
-                  navigate('/dashboard/world-model');
-                });
-              } catch (err: any) {
-                console.warn('Agent optimization execution notice:', err);
-                setIsOptimizing(false);
-              }
-            }}
-            disabled={isOptimizing}
-            className="flex items-center gap-1.5 px-4 py-2 bg-[#FF5A1F] hover:opacity-90 disabled:opacity-50 text-white rounded-xl text-[12.5px] font-bold shadow-xs transition-all cursor-pointer"
-          >
-            {isOptimizing ? <RotateCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
-            <span>Run Optimisation (Inference)</span>
-          </button>
-
+          <span className="hidden md:inline text-[11px] text-warm-muted font-mono">
+            New scenarios are built from the conversation
+          </span>
           {latestWorldModel && optimisationResult && (
             <button
               onClick={() => setInsightsOpen(o => !o)}
@@ -812,94 +647,8 @@ export default function OptimisePanel({ triggerToast }: OptimisePanelProps) {
               <span>{insightsOpen ? 'Hide Insights' : 'Show Insights'}</span>
             </button>
           )}
-
-          {runFullScenario && (
-            <button
-              onClick={() => {
-                const batchQuery = activeBatchId ? `?batch=${activeBatchId}` : '';
-                void runFullScenario({ navigate, triggerToast, batchQuery });
-              }}
-              disabled={isOptimizing}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#1A1918] hover:bg-black disabled:opacity-50 text-white rounded-xl text-[12px] font-bold shadow-xs transition-colors cursor-pointer"
-            >
-              <Zap className="h-3.5 w-3.5 text-[#FF5A1F]" />
-              <span>Run Full Scenario</span>
-            </button>
-          )}
         </div>
       </div>
-
-      {/* ── Forecast preview — real Holt-Winters result from the backend ─── */}
-      {forecastOpen && (
-        <div className="bg-white border border-warm-border rounded-2xl shadow-card overflow-hidden animate-float-up">
-          <div className="px-4 py-2.5 border-b border-warm-border bg-gradient-to-r from-white to-warm-bg/25 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-3.5 w-3.5 text-brand-indigo" />
-              <span className="text-[12px] font-bold text-warm-text">Forecast Result — {currentSolver.label}</span>
-              {realForecast && (
-                <span className="text-[9.5px] font-mono text-warm-muted bg-secondary px-2 py-0.5 rounded-full">
-                  alpha={realForecast.holt_winters_parameters.alpha}, beta={realForecast.holt_winters_parameters.beta}
-                </span>
-              )}
-            </div>
-            <button onClick={() => setForecastOpen(false)} className="text-warm-muted hover:text-warm-text cursor-pointer text-[12px]">✕</button>
-          </div>
-
-          {!realForecast ? (
-            <div className="p-6 text-center text-[12px] text-warm-muted">
-              {forecastError ? `Error: ${forecastError}` : 'No forecast result available.'}
-            </div>
-          ) : (
-            <table className="w-full text-left border-collapse text-[11.5px]">
-              <tbody>
-                <tr className="border-b border-warm-border/30">
-                  <td className="p-2.5 pl-4 font-semibold text-warm-muted">Data Range</td>
-                  <td className="p-2.5 pr-4 font-mono text-warm-text">{realForecast.data_range.start_time} → {realForecast.data_range.end_time}</td>
-                </tr>
-                <tr className="border-b border-warm-border/30">
-                  <td className="p-2.5 pl-4 font-semibold text-warm-muted">Last Known Value</td>
-                  <td className="p-2.5 pr-4 font-mono text-warm-text">{realForecast.last_known_value.toLocaleString()}</td>
-                </tr>
-                <tr className="border-b border-warm-border/30">
-                  <td className="p-2.5 pl-4 font-semibold text-warm-muted">Target Period</td>
-                  <td className="p-2.5 pr-4 font-mono font-bold text-brand-indigo">{realForecast.target_time}</td>
-                </tr>
-                <tr className="border-b border-warm-border/30">
-                  <td className="p-2.5 pl-4 font-semibold text-warm-muted">Forecasted Value</td>
-                  <td className="p-2.5 pr-4 font-mono font-bold text-brand-indigo">{realForecast.forecasted_value.toLocaleString()}</td>
-                </tr>
-                <tr>
-                  <td className="p-2.5 pl-4 font-semibold text-warm-muted">Predicted Growth Rate</td>
-                  <td className="p-2.5 pr-4 font-mono font-bold text-sage">{realForecast.predicted_growth_rate_percentage}</td>
-                </tr>
-              </tbody>
-            </table>
-          )}
-
-          <div className="px-4 py-2 bg-sage-light/40 border-t border-sage-border/40 text-[10.5px] font-sans flex items-center justify-end">
-            <span className="text-brand-indigo font-semibold hover:underline cursor-pointer"
-              onClick={async () => {
-                setIsOptimizing(true);
-                if (realForecast) {
-                  // Flow C: log forecast-as-target optimization intent
-                  const fcPrompt = `Lock forecast target of ${realForecast.forecasted_value.toLocaleString(undefined, { maximumFractionDigits: 2 })} for ${realForecast.target_time} and run full IPS inference to determine required data changes and strategies.`;
-                  addMessage({ role: 'user', content: fcPrompt });
-                  try {
-                    await api.agentChat({ message: fcPrompt, batch_id: activeBatchId || '' }).then(r => {
-                      addMessage({ role: 'ai', content: r.reply });
-                    });
-                  } catch { /* non-blocking */ }
-                }
-                runOptimisation(() => {
-                  setIsOptimizing(false);
-                  navigate('/dashboard/world-model');
-                });
-              }}>
-              Lock & run full IPS inference →
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* ── Canvas ───────────────────────────────────────────────── */}
       <div className="w-full overflow-x-auto no-scrollbar pb-6 relative rounded-2xl border border-warm-border/60 bg-gradient-to-b from-[#FAF9F7]/60 to-[#F5F3EF]/60 shadow-inner">

@@ -9,6 +9,16 @@ export interface Batch {
   meta?: string;
 }
 
+export type PipelinePhase = 'idle' | 'data' | 'prepare' | 'configure' | 'optimise' | 'result';
+
+export interface ConfigureStepState {
+  items: import('./api').LockableItem[];
+  locked: string[];
+  egrPct: number;                      // growth target in percent (15 = +15%)
+  strategy: import('./api').GrowthStrategy;
+  submitting: boolean;
+}
+
 export interface Message {
   role: 'ai' | 'user';
   content: string;
@@ -171,6 +181,15 @@ export interface GlobalState {
   setIsAwaitingDataSelection: (v: boolean) => void;
   worldModelSubView: 'matrix' | 'tree';
   setWorldModelSubView: (v: 'matrix' | 'tree') => void;
+
+  // Guided pipeline: Data → Prepare → Configure → Optimise → Result
+  pipelinePhase: PipelinePhase;
+  setPipelinePhase: (phase: PipelinePhase) => void;
+  /** Configure step (set after the backend prepares the data); null when not configuring */
+  configureStep: ConfigureStepState | null;
+  setConfigureStep: (state: ConfigureStepState | null) => void;
+  updateConfigureStep: (patch: Partial<ConfigureStepState>) => void;
+  toggleConfigureLock: (label: string) => void;
 
   // Per-batch Setup & Dimension State
   perBatchSetups: Record<string, SetupState>;

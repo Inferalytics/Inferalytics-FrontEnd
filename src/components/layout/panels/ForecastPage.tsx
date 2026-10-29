@@ -134,7 +134,7 @@ function EmptyState() {
       </div>
       <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-indigo/5 border border-brand-indigo/15 text-[12px] text-brand-indigo font-medium">
         <TrendingUp className="h-4 w-4" />
-        Go to IPS Engine → Run Forecast
+        Ask for a forecast in the conversation
       </div>
     </div>
   );

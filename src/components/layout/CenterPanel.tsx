@@ -95,7 +95,7 @@ export default function CenterPanel() {
           />
         )}
         {(tab === 'dimensions' || tab === 'blueprint' || tab === 'ecr-build' || tab === 'ecr-batch') && <BuildPanel />}
-        {(tab === 'scenarios' || tab === 'ips-engine') && <OptimisePanel triggerToast={triggerToast} />}
+        {(tab === 'scenarios' || tab === 'ips-engine') && <OptimisePanel />}
         {tab === 'world-model' && <WorldModelPage />}
         {tab === 'forecast' && <ForecastPage />}
         {tab === 'learning' && <LearningTab />}

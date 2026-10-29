@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store/useStore';
+import { useWorkspaceProgress } from './useWorkspaceProgress';
 import type { ModelType, OptimizationEngineModel } from '../../types';
 import { ChevronDown, LogOut, Menu, Plus, Trash2, Check, FolderKanban, Cpu, Sparkles } from 'lucide-react';
 import { UserButton, useUser } from '@clerk/clerk-react';
@@ -53,11 +54,13 @@ export default function Header() {
 
   const activeBatch = batches.find(b => b.id === activeBatchId) || batches[0] || { id: 'default', name: 'Main Workspace', status: 'active' };
 
-  // Streamlined 3-screen navigation items
-  const screensList = [
-    { path: 'conversation', num: '01', label: 'Conversation' },
-    { path: 'dimensions',   num: '02', label: 'Dimensions' },
-    { path: 'scenarios',    num: '03', label: 'Scenarios' },
+  // The whole workflow runs in Conversation; Dimensions and Scenarios are
+  // detail views that only have something to show once the batch produced it.
+  const { dataRows, scenarioCount } = useWorkspaceProgress();
+  const screensList: { path: string; label: string; count?: number; emptyHint?: string }[] = [
+    { path: 'conversation', label: 'Conversation' },
+    { path: 'dimensions',   label: 'Dimensions', count: dataRows,      emptyHint: 'Fills in once your data is prepared in the conversation' },
+    { path: 'scenarios',    label: 'Scenarios',  count: scenarioCount, emptyHint: 'Fills in after your first world model is built' },
   ];
 
   const [availableModels, setAvailableModels] = useState<{ value: ModelType; label: string; desc: string }[]>([
@@ -333,22 +336,28 @@ export default function Header() {
       <nav className="flex items-center gap-1 bg-[#F0ECE6]/80 p-1 rounded-full border border-warm-border/70 shadow-inner">
         {screensList.map(s => {
           const isActive = currentTab === s.path;
+          const isEmpty = s.count === 0;
           return (
             <button
               key={s.path}
               onClick={() => navigate(`/dashboard/${s.path}${activeBatchId ? `?batch=${activeBatchId}` : ''}`)}
+              title={isEmpty ? s.emptyHint : undefined}
               className={`flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 rounded-full text-[12px] transition-all duration-200 cursor-pointer shrink-0 ${
                 isActive
                   ? 'bg-white text-warm-text shadow-sm font-bold border border-warm-border/50'
+                  : isEmpty
+                  ? 'text-warm-muted/50 hover:text-warm-muted hover:bg-white/40 font-medium'
                   : 'text-warm-muted hover:text-warm-text hover:bg-white/50 font-medium'
               }`}
             >
-              <span className={`text-[10px] font-mono px-1 py-0.2 rounded ${
-                isActive ? 'bg-[#FFF2EE] text-[#FF5A1F] font-bold' : 'text-warm-muted/70'
-              }`}>
-                {s.num}
-              </span>
               <span>{s.label}</span>
+              {!!s.count && (
+                <span className={`text-[9.5px] font-mono font-bold px-1.5 py-0.2 rounded-full ${
+                  isActive ? 'bg-[#FFF2EE] text-[#FF5A1F]' : 'bg-white/70 text-warm-muted border border-warm-border/60'
+                }`}>
+                  {s.count}
+                </span>
+              )}
             </button>
           );
         })}

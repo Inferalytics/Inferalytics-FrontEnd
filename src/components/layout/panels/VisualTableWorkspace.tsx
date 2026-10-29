@@ -6,6 +6,9 @@ import { useStore } from '../../../store/useStore';
 import WorldModelCanvasTree from '../../chat/WorldModelCanvasTree';
 import WorldModelCompareView from '../../chat/WorldModelCompareView';
 import CombinedSpreadsheetTable from './CombinedSpreadsheetTable';
+import ConfigureBar from './ConfigureBar';
+import PipelineStepper from './PipelineStepper';
+import { useWorkspaceProgress } from '../useWorkspaceProgress';
 import { exportWorkspaceTableToCsv } from '../../../lib/workspaceTableUtils';
 
 interface VisualTableWorkspaceProps {
@@ -32,7 +35,22 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
     isAwaitingDataSelection,
     worldModelSubView,
     setWorldModelSubView,
+    pipelinePhase,
+    configureStep,
+    toggleConfigureLock,
   } = useStore();
+
+  const { scenarioCount } = useWorkspaceProgress();
+
+  // Configure step: which spreadsheet rows can be / are locked
+  const lockableLabels = useMemo(
+    () => (configureStep ? new Set(configureStep.items.map(i => i.label)) : undefined),
+    [configureStep],
+  );
+  const lockedLabels = useMemo(
+    () => (configureStep ? new Set(configureStep.locked) : undefined),
+    [configureStep],
+  );
 
   const [editingCell, setEditingCell] = useState<{ rowId: string; year: string } | null>(null);
   const [editValue, setEditValue] = useState<string>('');
@@ -543,15 +561,20 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
               <Download className="h-3.5 w-3.5 text-warm-muted" />
               <span className="hidden sm:inline">Export</span>
             </button>
-            <button
-              onClick={() => navigate(`/dashboard/dimensions${activeBatchId ? `?batch=${activeBatchId}` : ''}`)}
-              className="flex items-center gap-1.5 h-8 px-3.5 rounded-lg bg-[#FF5A1F] hover:bg-[#E54E17] text-white text-[11px] font-bold transition-all cursor-pointer"
-            >
-              <span>Dimensions</span>
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
+            {/* Contextual: never competes with "Build world model" during Configure */}
+            {!configureStep && hasValidWorkspaceTable && (
+              <button
+                onClick={() => navigate(`/dashboard/${scenarioCount > 0 ? 'scenarios' : 'dimensions'}${activeBatchId ? `?batch=${activeBatchId}` : ''}`)}
+                className="flex items-center gap-1.5 h-8 px-3.5 rounded-lg bg-[#FF5A1F] hover:bg-[#E54E17] text-white text-[11px] font-bold transition-all cursor-pointer"
+              >
+                <span>{scenarioCount > 0 ? 'Scenarios' : 'Dimensions'}</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </div>
+
+        <PipelineStepper phase={pipelinePhase} />
 
         {/* Bottom Row: View toggle + What-If */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -605,8 +628,8 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
             </button>
           </div>
 
-          {/* What-If Scenario Pills */}
-          <div className="flex items-center gap-1.5 flex-wrap">
+          {/* What-If Scenario Pills (hidden while configuring — they would start a separate run) */}
+          {!configureStep && <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[10px] font-bold text-warm-muted/70 uppercase tracking-wider font-mono">Scenario:</span>
             {[
               { delta: -10, label: '-10%' },
@@ -631,7 +654,7 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
                 </button>
               );
             })}
-          </div>
+          </div>}
         </div>
       </div>
 
@@ -1031,10 +1054,17 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
           )}
         </div>
       ) : hasValidWorkspaceTable && workspaceTable ? (
-        <CombinedSpreadsheetTable
-          table={workspaceTable}
-          triggerToast={triggerToast}
-        />
+        <>
+          <ConfigureBar />
+          <CombinedSpreadsheetTable
+            table={workspaceTable}
+            triggerToast={triggerToast}
+            lockableLabels={lockableLabels}
+            lockedLabels={lockedLabels}
+            onToggleLock={toggleConfigureLock}
+            lockDisabled={configureStep?.submitting}
+          />
+        </>
       ) : (
         /* ── Structured Spreadsheet View (Fallback Visual Table Model) ── */
         <div className="flex-1 min-h-0 overflow-auto custom-scrollbar w-full relative">

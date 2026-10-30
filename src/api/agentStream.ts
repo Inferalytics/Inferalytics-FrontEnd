@@ -1,6 +1,6 @@
 import axiosClient, { clearStoredApiKey, getAuthToken } from './axiosClient.ts';
 import { createSseParser } from '../lib/agentStream.ts';
-import type { AgentRequest, AgentResponse, WorkspaceTable } from '../types/api.ts';
+import type { AgentRequest, AgentResponse, DatasetDesign, WorkspaceTable } from '../types/api.ts';
 
 const STREAM_PATH = '/api/data-ops-agent/chat/stream';
 
@@ -11,6 +11,8 @@ export interface AgentStreamHandlers {
   onToolEnd?: (toolName: string, outcome: 'success' | 'error') => void;
   /** Latest workspace table after a tool changed it. */
   onWorkspaceTable?: (table: WorkspaceTable) => void;
+  /** Latest dataset design after the agent edited it. */
+  onDatasetDesign?: (design: DatasetDesign) => void;
   signal?: AbortSignal;
 }
 
@@ -76,6 +78,7 @@ export async function streamAgentChat(
       case 'tool_start': handlers.onToolStart?.(String(d.name ?? ''), Number(d.iteration ?? 0)); break;
       case 'tool_end': handlers.onToolEnd?.(String(d.name ?? ''), d.outcome === 'error' ? 'error' : 'success'); break;
       case 'workspace_table': handlers.onWorkspaceTable?.(d as unknown as WorkspaceTable); break;
+      case 'dataset_design': handlers.onDatasetDesign?.(d as unknown as DatasetDesign); break;
       case 'final': final = d as unknown as AgentResponse; break;
       case 'error': streamError = typeof d.message === 'string' ? d.message : 'Something went wrong. Please try again.'; break;
     }

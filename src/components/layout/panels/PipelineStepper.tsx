@@ -3,9 +3,10 @@ import { Check } from 'lucide-react';
 import type { PipelinePhase } from '../../../types';
 
 // Mirrors the backend pipeline order:
-// data collection → vectorise + aggregate → user settings → Newton-Raphson → world model
+// dataset design → real data → vectorise + aggregate → user settings → Newton-Raphson → world model
 const STEPS: { phase: Exclude<PipelinePhase, 'idle'>; label: string }[] = [
-  { phase: 'data',      label: 'Data' },
+  { phase: 'design',    label: 'Design' },
+  { phase: 'data',      label: 'Real data' },
   { phase: 'prepare',   label: 'Prepare' },
   { phase: 'configure', label: 'Configure' },
   { phase: 'optimise',  label: 'Optimise' },

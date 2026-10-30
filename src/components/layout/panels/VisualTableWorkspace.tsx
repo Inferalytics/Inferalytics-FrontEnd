@@ -7,9 +7,12 @@ import WorldModelCanvasTree from '../../chat/WorldModelCanvasTree';
 import WorldModelCompareView from '../../chat/WorldModelCompareView';
 import CombinedSpreadsheetTable from './CombinedSpreadsheetTable';
 import ConfigureBar from './ConfigureBar';
+import DatasetDesignTable from './DatasetDesignTable';
+import EstimatesBanner from './EstimatesBanner';
 import PipelineStepper from './PipelineStepper';
 import { useWorkspaceProgress } from '../useWorkspaceProgress';
 import { exportWorkspaceTableToCsv } from '../../../lib/workspaceTableUtils';
+import { designToCsv } from '../../../lib/datasetDesign';
 
 interface VisualTableWorkspaceProps {
   onWhatIfPrompt?: (prompt: string) => void;
@@ -21,9 +24,9 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
   const {
     visualTable,
     updateTableCell,
-    applyTableWhatIf,
     resetTableData,
     activeBatchId,
+    datasetDesign,
     worldModels,
     scenarioCompare,
     workspaceTable,
@@ -62,9 +65,12 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
       : worldModels;
   }, [worldModels, activeBatchId]);
 
-  // Derive active multiplier and delta percentage directly from store visualTable
-  const activeMultiplier = visualTable?.growthMultiplier ?? 1.0;
-  const activeDeltaPct = Math.round((activeMultiplier - 1) * 100);
+  // What-if growth is computed by the backend (chips ask the advisor), never scaled in the browser.
+  // A multiplier left in localStorage by the old local what-if must not distort the values shown.
+  const activeMultiplier = 1.0;
+  const activeDeltaPct = 0;
+  // Which what-if chip the user last asked for (highlight only)
+  const [selectedWhatIf, setSelectedWhatIf] = useState<number | null>(null);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Dynamic Factor Rows derived from API World Model or visual table
@@ -343,7 +349,28 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
     workspaceTable.rows.length > 0
   );
 
+  // A batch with a dataset design uses it as its spreadsheet at every step: the real file / web
+  // values are merged into it, and its rows are what the Configure step locks.
+  const showDesign = Boolean(datasetDesign && tableWorkspaceViewMode === 'grid');
+  const stepperPhase = pipelinePhase === 'idle' && showDesign && datasetDesign?.status === 'draft' ? 'design' : pipelinePhase;
+
+  // Share of estimated values behind the latest world model built from a dataset design
+  const latestWorldModel = batchModels[batchModels.length - 1];
+  const estimatedShare = latestWorldModel?.data_basis?.estimated_share ?? 0;
+
   const handleExportCSV = () => {
+    if (showDesign && datasetDesign) {
+      const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(designToCsv(datasetDesign));
+      const link = document.createElement('a');
+      link.setAttribute('href', csvContent);
+      link.setAttribute('download', `inferalytics_dataset_design_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      if (triggerToast) triggerToast('Exported the dataset design to CSV');
+      return;
+    }
+
     if (hasValidWorkspaceTable && workspaceTable) {
       const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(exportWorkspaceTableToCsv(workspaceTable));
       const link = document.createElement('a');
@@ -373,11 +400,11 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
   };
 
   const handleWhatIfClick = (deltaPct: number, label: string) => {
-    applyTableWhatIf(deltaPct, label);
+    setSelectedWhatIf(deltaPct);
     if (onWhatIfPrompt) {
       onWhatIfPrompt(deltaPct === 0 ? "Reset table to baseline model" : `What if we model a ${deltaPct > 0 ? '+' : ''}${deltaPct}% growth shift across projected years?`);
     }
-    if (triggerToast) triggerToast(`Scenario applied: ${label}`);
+    if (triggerToast) triggerToast(`Asked the advisor to model: ${label}`);
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -536,6 +563,10 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
                 <span className="text-[11px] text-warm-muted font-medium truncate">
                   {batchModels.length} {batchModels.length === 1 ? 'Scenario' : 'Scenarios'} Evaluated
                 </span>
+              ) : showDesign && datasetDesign ? (
+                <span className="text-[11px] text-warm-muted font-medium truncate">
+                  {datasetDesign.granularity === 'yearly' ? 'Yearly' : 'Quarterly'} · built with the advisor
+                </span>
               ) : visualTable.activeScenarioName ? (
                 <span className="text-[11px] text-warm-muted font-medium truncate">
                   {visualTable.activeScenarioName}
@@ -547,6 +578,8 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
                 ? 'Scenario Comparison & Strategy Evaluation'
                 : tableWorkspaceViewMode === 'world_model'
                 ? 'World Model Factor & Driver Matrix'
+                : showDesign
+                ? 'Dataset Design'
                 : workspaceTitle}
             </h2>
           </div>
@@ -574,7 +607,11 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
           </div>
         </div>
 
-        <PipelineStepper phase={pipelinePhase} />
+        <PipelineStepper phase={stepperPhase} />
+
+        {tableWorkspaceViewMode !== 'grid' && estimatedShare > 0 && (
+          <EstimatesBanner share={estimatedShare} />
+        )}
 
         {/* Bottom Row: View toggle + What-If */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -628,8 +665,9 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
             </button>
           </div>
 
-          {/* What-If Scenario Pills (hidden while configuring — they would start a separate run) */}
-          {!configureStep && <div className="flex items-center gap-1.5 flex-wrap">
+          {/* What-If Scenario Pills: ask the advisor for a scenario. Only once a world model exists,
+              and never while designing or configuring (they would start a separate run). */}
+          {!configureStep && !showDesign && batchModels.length > 0 && <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[10px] font-bold text-warm-muted/70 uppercase tracking-wider font-mono">Scenario:</span>
             {[
               { delta: -10, label: '-10%' },
@@ -639,7 +677,7 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
               { delta: 10,  label: '+10%' },
               { delta: 15,  label: '+15%' },
             ].map((sc) => {
-              const isSelected = (sc.delta === 0 && (activeDeltaPct === 0 || Math.abs(activeMultiplier - 1.0) < 0.01)) || activeDeltaPct === sc.delta;
+              const isSelected = (selectedWhatIf ?? 0) === sc.delta;
               return (
                 <button
                   key={sc.delta}
@@ -659,7 +697,20 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
       </div>
 
       {/* ── Content View ── */}
-      {!hasValidWorkspaceTable && activeTableRows.length === 0 && factorRows.length === 0 ? (
+      {showDesign && datasetDesign ? (
+        <>
+          <ConfigureBar />
+          <DatasetDesignTable
+            design={datasetDesign}
+            batchId={activeBatchId}
+            triggerToast={triggerToast}
+            lockableLabels={lockableLabels}
+            lockedLabels={lockedLabels}
+            onToggleLock={toggleConfigureLock}
+            lockDisabled={configureStep?.submitting}
+          />
+        </>
+      ) : !hasValidWorkspaceTable && activeTableRows.length === 0 && factorRows.length === 0 ? (
         <div className="flex-1 min-h-[460px] flex flex-col items-center justify-center p-8 sm:p-16 text-center bg-[#FAF9F7]/40">
           <div className="h-16 w-16 rounded-2xl bg-[#FFF2EE] border border-[#FFD4C5] flex items-center justify-center mb-4 shadow-xs">
             <Table2 className="h-8 w-8 text-[#FF5A1F]" />
@@ -1296,7 +1347,8 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
         </div>
       )}
 
-      {/* ── Bottom Status Bar ── */}
+      {/* ── Bottom Status Bar (the design table has its own) ── */}
+      {!showDesign && (
       <div className="shrink-0 px-4 py-2 border-t border-[#EDEAE4] flex items-center justify-between gap-3 text-[10.5px] text-[#A09890] font-mono select-none" style={{ background: '#F7F5F0' }}>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5">
@@ -1308,6 +1360,7 @@ export default function VisualTableWorkspace({ onWhatIfPrompt, triggerToast }: V
         </div>
         <span>{activeTableRows.length} rows · {allYears.length} periods</span>
       </div>
+      )}
 
     </div>
   );

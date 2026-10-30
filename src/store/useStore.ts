@@ -456,47 +456,6 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
     });
   },
 
-  applyTableWhatIf: (growthDeltaPct: number, scenarioLabel?: string) => {
-    const current = get().visualTable;
-    const baseMultiplier = 1 + (growthDeltaPct / 100);
-    const projectedYears = current.years.projected;
-    const historicalYears = current.years.historical;
-    const lastHistYear = historicalYears[historicalYears.length - 1];
-
-    const updatedRows = current.rows.map(row => {
-      const lastHistVal = lastHistYear ? (row.values[lastHistYear] ?? 100) : 100;
-      const newValues = { ...row.values };
-
-      projectedYears.forEach((yr, idx) => {
-        const baseProjected = lastHistVal * Math.pow(1.04, idx + 1);
-        const compoundFactor = Math.pow(baseMultiplier, (idx + 1) * 0.4);
-        newValues[yr] = parseFloat((baseProjected * compoundFactor).toFixed(1));
-      });
-
-      return {
-        ...row,
-        values: newValues
-      };
-    });
-
-    const activeScenario = scenarioLabel || (growthDeltaPct === 0 ? 'Baseline Model' : `What-If: ${growthDeltaPct > 0 ? '+' : ''}${growthDeltaPct}% Growth Assumption`);
-    const newVisualTable = {
-      ...current,
-      rows: updatedRows,
-      growthMultiplier: baseMultiplier,
-      activeScenarioName: activeScenario
-    };
-    const batchId = get().activeBatchId;
-    const perBatchVisualTables = batchId
-      ? { ...get().perBatchVisualTables, [batchId]: newVisualTable }
-      : get().perBatchVisualTables;
-
-    set({
-      visualTable: newVisualTable,
-      perBatchVisualTables,
-    });
-  },
-
   setVisualTable: (table: import('../types').VisualTableWorkspaceState) => {
     const batchId = get().activeBatchId;
     const perBatchVisualTables = batchId
@@ -541,6 +500,34 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
       : get().perBatchWorkspaceTables;
     set({ workspaceTable: table, perBatchWorkspaceTables });
   },
+
+  datasetDesign: null,
+  perBatchDatasetDesigns: {} as Record<string, import('../types/api').DatasetDesign | null>,
+  setDatasetDesign: (design) => {
+    const batchId = get().activeBatchId;
+    const perBatchDatasetDesigns = batchId
+      ? { ...get().perBatchDatasetDesigns, [batchId]: design }
+      : get().perBatchDatasetDesigns;
+    // A table reopened as a draft must be approved and prepared again, so the
+    // Configure step for the previously prepared data no longer applies.
+    if (design?.status === 'draft' && get().configureStep) {
+      set({ datasetDesign: design, perBatchDatasetDesigns, configureStep: null, pipelinePhase: 'design' });
+      return;
+    }
+    set({ datasetDesign: design, perBatchDatasetDesigns });
+  },
+  loadDatasetDesign: async () => {
+    const batchId = get().activeBatchId;
+    if (!batchId) return;
+    try {
+      const design = await api.getDatasetDesign(batchId);
+      // Ignore the answer if the user switched batches while it was loading
+      if (get().activeBatchId === batchId) get().setDatasetDesign(design);
+    } catch (err) {
+      console.warn('Dataset design not available for this batch:', err);
+    }
+  },
+
   tableWorkspaceViewMode: 'grid',
   setTableWorkspaceViewMode: (mode: 'grid' | 'world_model' | 'compare') => {
     set({ tableWorkspaceViewMode: mode });
@@ -670,6 +657,8 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
       tableWorkspaceViewMode: 'grid',
       pipelinePhase: 'idle',
       configureStep: null,
+      // Cached copy until syncBackendState loads the backend's version
+      datasetDesign: isSameBatch ? state.datasetDesign : (state.perBatchDatasetDesigns[id] ?? null),
     });
 
     if (get().syncBackendState) {
@@ -830,6 +819,9 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
       // from a previous batch, causing cross-batch contamination on the
       // Forecast page. Forecast state is only set when the agent actually
       // runs a forecast in the current session (via RightPanel / TalkPanel).
+
+      // 0. Dataset design (batch-aware; runs alongside the rest)
+      void get().loadDatasetDesign();
 
       // 1. Sync EGR Target
       try {
@@ -1197,57 +1189,6 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
         target: targetPct,
       },
     });
-
-    // ── Sync Optimized Scenario Values into Visual Table Projected Columns ──
-    const currentVt = get().visualTable;
-    if (currentVt && currentVt.rows.length > 0) {
-      const optMultiplier = 1 + (finalPct / 100);
-      const projYears = currentVt.years.projected;
-      const histYears = currentVt.years.historical;
-      const lastHistYr = histYears[histYears.length - 1];
-
-      const allWmCats = wm.world_model_tree?.macro_categories?.flatMap(m => m.categories || []) || [];
-
-      const updatedVtRows = currentVt.rows.map(row => {
-        const lastHistVal = lastHistYr ? (row.values[lastHistYr] ?? 100) : 100;
-        const matchCat = allWmCats.find(c => 
-          c.label.toLowerCase() === row.name.toLowerCase() || 
-          row.name.toLowerCase().includes(c.label.toLowerCase()) || 
-          c.label.toLowerCase().includes(row.name.toLowerCase())
-        );
-
-        const rowMultiplier = matchCat && matchCat.original_value > 0
-          ? (matchCat.final_value / matchCat.original_value)
-          : optMultiplier;
-
-        const newVals = { ...row.values };
-        projYears.forEach((yr, idx) => {
-          const baseVal = lastHistVal * Math.pow(1.04, idx + 1);
-          const compoundStep = Math.pow(rowMultiplier, (idx + 1) * 0.4);
-          newVals[yr] = parseFloat((baseVal * compoundStep).toFixed(1));
-        });
-
-        return {
-          ...row,
-          values: newVals
-        };
-      });
-
-      const newVt = {
-        ...currentVt,
-        rows: updatedVtRows,
-        growthMultiplier: optMultiplier,
-        activeScenarioName: wm.scenario_label || `Optimized Run (+${finalPct.toFixed(1)}%)`,
-        scenarioLocked: true,  // prevent syncBackendState from overwriting these scenario values
-      };
-
-      const batchId = get().activeBatchId;
-      const perBatchVisualTables = batchId
-        ? { ...get().perBatchVisualTables, [batchId]: newVt }
-        : get().perBatchVisualTables;
-
-      set({ visualTable: newVt, perBatchVisualTables });
-    }
   },
 
   toggleScenarioChecked: (id: string) => {
@@ -1636,6 +1577,8 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
     // Per-batch visual & workspace tables (strictly isolated per batch)
     perBatchVisualTables: state.perBatchVisualTables,
     perBatchWorkspaceTables: state.perBatchWorkspaceTables,
+    // Cache only — the backend design is reloaded on every sync
+    perBatchDatasetDesigns: state.perBatchDatasetDesigns,
     perBatchSetups: state.perBatchSetups,
     perBatchGrowthRates: state.perBatchGrowthRates,
     perBatchDimensions: state.perBatchDimensions,
@@ -1672,6 +1615,7 @@ export const useStore = create<GlobalState>()(persist((set, get) => ({
     // Restore per-batch state for the active batch
     state.visualTable = state.perBatchVisualTables?.[id] || INITIAL_VISUAL_TABLE;
     state.workspaceTable = state.perBatchWorkspaceTables?.[id] || null;
+    state.datasetDesign = state.perBatchDatasetDesigns?.[id] || null;
     state.setup = state.perBatchSetups?.[id] || { focalPoint: '', timeGranularity: 'Quarter', timeRange: '', segments: [], parameters: [], sources: [] };
     state.growthRates = state.perBatchGrowthRates?.[id] || INITIAL_GROWTH_RATES;
     state.dimensions = state.perBatchDimensions?.[id] || INITIAL_DIMENSIONS(4);

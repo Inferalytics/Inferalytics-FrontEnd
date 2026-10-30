@@ -7,6 +7,7 @@ import WorldModelGraph from '../../chat/WorldModelGraph';
 import WorldModelCanvasTree from '../../chat/WorldModelCanvasTree';
 import WorldModelContributionChart from '../../chat/WorldModelContributionChart';
 import WorldModelCompareView from '../../chat/WorldModelCompareView';
+import EstimatesBanner from './EstimatesBanner';
 
 type ViewMode = 'graph' | 'tree' | 'compare';
 
@@ -69,6 +70,8 @@ export default function WorldModelPage() {
 
   // Sort newest-first for display
   const rawReversed = [...batchModels].sort((a, b) => b.scenario_number - a.scenario_number);
+  // Share of estimated values behind the newest scenario built from a dataset design
+  const estimatedShare = rawReversed[0]?.data_basis?.estimated_share ?? 0;
 
   // If no world model was returned from API, synthesize from live store state and active dataset
   const reversed: WorldModel[] = React.useMemo(() => {
@@ -256,6 +259,11 @@ export default function WorldModelPage() {
             <p className="text-[12px] text-warm-muted">
               {totalCount} scenario{totalCount !== 1 ? 's' : ''} · Granular driver decomposition &amp; EGR contribution
             </p>
+            {estimatedShare > 0 && (
+              <div className="mt-2">
+                <EstimatesBanner share={estimatedShare} />
+              </div>
+            )}
           </div>
         </div>
 

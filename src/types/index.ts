@@ -9,7 +9,7 @@ export interface Batch {
   meta?: string;
 }
 
-export type PipelinePhase = 'idle' | 'data' | 'prepare' | 'configure' | 'optimise' | 'result';
+export type PipelinePhase = 'idle' | 'design' | 'data' | 'prepare' | 'configure' | 'optimise' | 'result';
 
 export interface ConfigureStepState {
   items: import('./api').LockableItem[];
@@ -165,7 +165,6 @@ export interface GlobalState {
   perBatchVisualTables: Record<string, VisualTableWorkspaceState>;
   setVisualTable: (table: VisualTableWorkspaceState) => void;
   updateTableCell: (rowId: string, year: string, value: number) => void;
-  applyTableWhatIf: (growthDeltaPct: number, scenarioLabel?: string) => void;
   resetTableData: () => void;
   addTableRow: (row: TableRowItem) => void;
 
@@ -173,6 +172,14 @@ export interface GlobalState {
   workspaceTable: import('./api').WorkspaceTable | null;
   perBatchWorkspaceTables: Record<string, import('./api').WorkspaceTable | null>;
   setWorkspaceTable: (table: import('./api').WorkspaceTable | null) => void;
+
+  // Dataset design: the periods × rows table built with the agent before any data is fetched.
+  // The backend owns it; this is the latest copy (null until the design step starts).
+  datasetDesign: import('./api').DatasetDesign | null;
+  perBatchDatasetDesigns: Record<string, import('./api').DatasetDesign | null>;
+  setDatasetDesign: (design: import('./api').DatasetDesign | null) => void;
+  /** Fetch the active batch's design from the backend */
+  loadDatasetDesign: () => Promise<void>;
   tableWorkspaceViewMode: 'grid' | 'world_model' | 'compare';
   setTableWorkspaceViewMode: (mode: 'grid' | 'world_model' | 'compare') => void;
   worldModelLoading: boolean;

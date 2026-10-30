@@ -636,6 +636,8 @@ export interface WorldModel {
   changes_from_previous: ChangesFromPrevious | null;
   comparison: ScenarioComparison | null;
   world_model_tree: WorldModelTreeType | null;
+  /** Present when the scenario was built from a dataset design */
+  data_basis?: { source: 'dataset_design'; estimated_share: number } | null;
 }
 
 // ─── Workspace Table (Conversational Table) ──────────────────────────────────
@@ -658,6 +660,66 @@ export interface WorkspaceTable {
   rows: WorkspaceTableRow[];         // each row is { id, item, [colId]: value, ... }
   version: number;                   // increments on every update
   updated_at: string | null;         // ISO-8601
+}
+
+// ─── Dataset Design (table built with the agent before any data is fetched) ──
+
+export type DesignGranularity = 'yearly' | 'quarterly';
+/** Where a cell's value came from; 'derived' cells are calculated by the backend from a formula. */
+export type DesignCellStatus = 'estimated' | 'interpolated' | 'user' | 'web' | 'file' | 'derived';
+
+export interface DesignPeriod {
+  key: string;        // stable key: "FY2024" (yearly) or "Q1_2024" (quarterly)
+  label: string;      // column header: "2024" or "Q1 2024"
+  projected: boolean; // the period has not finished yet
+}
+
+export interface DesignFormula {
+  op: 'product' | 'sum' | 'difference' | 'ratio' | 'yoy';
+  of: string[];       // input dimension ids
+  scale: number;
+}
+
+export interface DesignDimension {
+  id: string;
+  name: string;
+  unit: string;
+  group: string;
+  kind: 'input' | 'derived';
+  formula: DesignFormula | null;
+  optimise: boolean;
+}
+
+export interface DesignCell {
+  value: number;
+  status: DesignCellStatus;
+  source_url?: string | null;
+  source_name?: string | null;
+  confidence?: number | null;
+}
+
+export interface DatasetDesign {
+  version: number;
+  status: 'draft' | 'approved';
+  granularity: DesignGranularity;
+  periods: DesignPeriod[];
+  dimensions: DesignDimension[];
+  /** dimension id → period key → cell; a missing entry is an empty cell */
+  cells: Record<string, Record<string, DesignCell>>;
+  /** dimension ids added or changed by the most recent edit */
+  last_changed: string[];
+  updated_at: string | null;
+}
+
+/** Sent by the "Approve structure" button, or to reopen an approved table. */
+export interface DatasetAction {
+  type: 'approve' | 'reopen';
+}
+
+export interface DesignCellEdit {
+  dimension: string;   // dimension id
+  period: string;      // period key
+  value: number | null;
 }
 
 // ─── AI Agent ─────────────────────────────────────────────────────────────────
@@ -687,6 +749,7 @@ export interface AgentRequest {
   clear_history?: boolean;
   conversation_history?: ConversationTurn[];
   optimization_settings?: OptimizationSettings;
+  dataset_action?: DatasetAction;
 }
 
 export interface AgentResponse {
@@ -698,7 +761,7 @@ export interface AgentResponse {
   forecast: ForecastPipelineResult | null;
   workspace_table?: WorkspaceTable | null;
   /** Pipeline step signal from backend — drives interactive web→upload→world-model flow */
-  pipeline_step?: 'streaming_web_data' | 'awaiting_file_decision' | 'awaiting_file_upload' | 'awaiting_optimization_settings' | 'world_model_ready' | null;
+  pipeline_step?: 'designing_dataset' | 'streaming_web_data' | 'awaiting_file_decision' | 'awaiting_file_upload' | 'awaiting_optimization_settings' | 'world_model_ready' | null;
   /** Explicit UI command from backend — e.g. show the data-source modal or stream benchmarks */
   ui_command?: {
     action: 'render_upload_modal' | 'stream_web_data' | 'configure_optimization' | string;
@@ -710,4 +773,6 @@ export interface AgentResponse {
     egr_value?: number | null;
     growth_strategy?: GrowthStrategy;
   } | null;
+  /** The batch's dataset design; null until the design step has started */
+  dataset_design?: DatasetDesign | null;
 }

@@ -14,18 +14,20 @@ import {
   hasExplicitPipelineParams,
   buildFullScenarioPrompt,
 } from '../../lib/agentNavigation';
-import { updateWorkspaceTableWithScenario, mergeWebTableWithFileData } from '../../lib/workspaceTableUtils';
+import { mergeWebTableWithFileData } from '../../lib/workspaceTableUtils';
 import type { WorkspaceTableRow } from '../../types/api';
 import type { ConversationTurn } from '../../types/api';
 import DataSourceModal from './panels/DataSourceModal';
 import { toolProgressLabel } from '../../lib/agentStream';
 import { BUILD_WORLD_MODEL_EVENT } from './panels/ConfigureBar';
+import { DATASET_ACTION_EVENT } from './panels/DatasetDesignTable';
 import { useWorkspaceProgress } from './useWorkspaceProgress';
-import type { OptimizationSettings } from '../../types/api';
+import type { DatasetAction, OptimizationSettings } from '../../types/api';
 import type { PipelinePhase } from '../../types';
 
 // Which pipeline step a running tool belongs to (drives the step strip)
 const TOOL_PHASE: Record<string, PipelinePhase> = {
+  edit_dataset_design: 'design',
   collect_web_data: 'data',
   upload_data: 'data',
   prepare_data: 'prepare',
@@ -401,11 +403,13 @@ export default function LeftPanel() {
     latestForecast,
     egrTarget,
     setPipelineStage,
-    applyTableWhatIf,
     resetTableData,
     setVisualTable,
     workspaceTable,
     setWorkspaceTable,
+    datasetDesign,
+    setDatasetDesign,
+    loadDatasetDesign,
     setTableWorkspaceViewMode,
     setScenarioCompare,
     setIsAwaitingDataSelection,
@@ -573,6 +577,8 @@ export default function LeftPanel() {
             });
 
           } else if (type === 'benchmark') {
+            // With a dataset design the backend writes each found value into the design table
+            if (useStore.getState().datasetDesign) void loadDatasetDesign();
             const rowId = `web_${(metricName || String(Math.random())).toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
             const row: import('../../types/api').WorkspaceTableRow = {
               id: rowId, item: metricName,
@@ -621,6 +627,13 @@ export default function LeftPanel() {
     setIsAwaitingDataSelection(false);
   };
 
+  // Approved dataset design: build from its estimates without uploading or web research
+  const handleModalEstimates = () => {
+    setShowDataSourceModal(false);
+    setIsAwaitingDataSelection(false);
+    void sendMessage('proceed_with_estimates');
+  };
+
   const handlePipelineFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -645,45 +658,17 @@ export default function LeftPanel() {
     }
   };
 
-  const updateWorkspaceTableForScenario = (prompt: string) => {
-    const currentWsTable = useStore.getState().workspaceTable;
-    if (!currentWsTable || !currentWsTable.columns || currentWsTable.columns.length === 0) return;
-
-    const updated = updateWorkspaceTableWithScenario(currentWsTable, prompt);
-    if (updated) {
-      setWorkspaceTable(updated);
-    }
-  };
-
   const sendMessage = async (
     userText: string,
     silent = false,
-    opts: { optimizationSettings?: OptimizationSettings } = {},
+    opts: { optimizationSettings?: OptimizationSettings; datasetAction?: DatasetAction } = {},
   ) => {
     if (!userText.trim()) return;
     const settings = opts.optimizationSettings;
-
-    // Text-based what-if shortcuts only apply to free-typed messages, never to a
-    // Configure-step submission (its summary text mentions percentages).
-    if (!settings) {
-    // Reactively update what-if scenario values in workspace table
-    updateWorkspaceTableForScenario(userText);
-
-    // Apply table what if if matching percentage
-    const lower = userText.toLowerCase();
-    if (lower.includes('+5%') || lower.includes('accelerat')) {
-      applyTableWhatIf(5, '+5% Accelerated Growth Scenario');
-    } else if (lower.includes('+10%') || lower.includes('10%') || lower.includes('expansion')) {
-      applyTableWhatIf(10, '+10% Aggressive Expansion Scenario');
-    } else if (lower.includes('-5%') || lower.includes('soft landing') || lower.includes('contraction')) {
-      applyTableWhatIf(-5, '-5% Soft Landing Scenario');
-    } else if (lower.includes('reset') || lower.includes('baseline')) {
-      applyTableWhatIf(0, 'Baseline Model');
-    }
-    }
+    const datasetAction = opts.datasetAction;
 
     // ── Full scenario: step through Forecast → IPS Engine → World Model ─────
-    if (!settings && isFullScenarioRequest(userText)) {
+    if (!settings && !datasetAction && isFullScenarioRequest(userText)) {
       addMessage({ role: 'user', content: userText });
       setIsOptimizing(true);
 
@@ -785,12 +770,24 @@ export default function LeftPanel() {
         }
       }
 
+      // The dataset design table is the Conversation tab's spreadsheet; bring the user
+      // there (once) whenever the table is being shaped or needs approving again.
+      let onSpreadsheet = !tab || tab === 'conversation';
+      const showSpreadsheet = () => {
+        setTableWorkspaceViewMode('grid');
+        if (!onSpreadsheet) {
+          onSpreadsheet = true;
+          navigate(`/dashboard/conversation?batch=${targetBatchId}`);
+        }
+      };
+
       const res = await api.agentChat(
         {
           message: userText,
           batch_id: targetBatchId,
           conversation_history: historyRef.current,
           optimization_settings: settings,
+          dataset_action: datasetAction,
         },
         {
           onTextDelta: (text) => setStreamingReply(prev => prev + text),
@@ -804,6 +801,11 @@ export default function LeftPanel() {
           onToolEnd: () => setAgentActivity(null),
           onWorkspaceTable: (table) => {
             if (table.columns && table.columns.length > 0) setWorkspaceTable(table);
+          },
+          // The design table fills in live while the agent shapes it
+          onDatasetDesign: (design) => {
+            setDatasetDesign(design);
+            showSpreadsheet();
           },
         },
       );
@@ -833,6 +835,12 @@ export default function LeftPanel() {
       }
       if (res?.forecast?.comparison) {
         setScenarioCompare(res.forecast.comparison);
+      }
+      // Only some responses carry the design; a missing one never clears it (syncBackendState reloads it)
+      if (res.dataset_design) setDatasetDesign(res.dataset_design);
+      if (pipelineStep === 'designing_dataset') {
+        setPipelinePhase('design');
+        setTableWorkspaceViewMode('grid');
       }
 
       if (uiCmd === 'configure_optimization') {
@@ -900,6 +908,14 @@ export default function LeftPanel() {
             setLatestForecast(undefined as any);
           }
         } catch {}
+      }
+
+      // A table being designed, or changed since its data was prepared, is approved or
+      // edited on the spreadsheet — take the user there instead of leaving them elsewhere.
+      const designIsDraft = (res.dataset_design ?? useStore.getState().datasetDesign)?.status === 'draft';
+      if (pipelineStep === 'designing_dataset' || (designIsDraft && !wm)) {
+        showSpreadsheet();
+        return;
       }
 
       if (pipelineStep === 'world_model_ready') {
@@ -970,6 +986,21 @@ export default function LeftPanel() {
     };
     window.addEventListener(BUILD_WORLD_MODEL_EVENT, handleBuild);
     return () => window.removeEventListener(BUILD_WORLD_MODEL_EVENT, handleBuild);
+  });
+
+  // Design table "Approve structure" / "Edit structure" → applied by the backend without the LLM.
+  useEffect(() => {
+    const handleDatasetAction = (e: Event) => {
+      const action = (e as CustomEvent<DatasetAction>).detail;
+      if (!action || isOptimizing) return;
+      void sendMessage(
+        action.type === 'approve' ? 'Approve structure' : 'Edit the table structure',
+        false,
+        { datasetAction: action },
+      );
+    };
+    window.addEventListener(DATASET_ACTION_EVENT, handleDatasetAction);
+    return () => window.removeEventListener(DATASET_ACTION_EVENT, handleDatasetAction);
   });
 
   // Support listening to custom events from other components (e.g. VisualTableWorkspace onWhatIfPrompt)
@@ -1455,7 +1486,11 @@ export default function LeftPanel() {
         onChange={handlePipelineFileInput}
       />
       {showDataSourceModal && (
-        <DataSourceModal onYes={handleModalYes} onNo={handleModalNo} />
+        <DataSourceModal
+          onYes={handleModalYes}
+          onNo={handleModalNo}
+          onEstimates={datasetDesign?.status === 'approved' ? handleModalEstimates : undefined}
+        />
       )}
     </aside>
   );

@@ -77,6 +77,7 @@ const TOOL_PROGRESS_LABELS: Record<string, string> = {
   get_forecast_results: 'Looking up forecast results…',
   collect_web_data: 'Researching benchmarks on the web…',
   update_world_model_entry: 'Updating the world model…',
+  edit_dataset_design: 'Updating the table…',
 };
 
 export function toolProgressLabel(toolName: string): string {

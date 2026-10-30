@@ -361,7 +361,6 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
     conversation,
     addMessage,
     activeBatchId,
-    applyTableWhatIf,
     resetTableData,
     setVisualTable,
     addTableRow,
@@ -716,7 +715,6 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
     // NOTE: bare '5%' is deliberately excluded — it's a substring of '-5%' and
     // was swallowing the -5% Soft Landing branch below before it could match.
     if (lower.includes('+5%') || lower.includes('accelerat')) {
-      applyTableWhatIf(5, '+5% Accelerated Growth Scenario');
       const dynamicTbl = buildRuntimeTable(1.05, 'Scenario (+5%)');
 
       return `# SCENARIO RUN: +5% Accelerated Growth ✓\n\n### 1. What Changed (Input Levers)\n- **Growth Multiplier**: Applied a **+5.0% compound expansion factor (1.05x)** across forecast periods.\n- **Scope**: Recomputed baseline targets across all ${tableRows.length || wmCategories?.length || 0} active factor drivers.\n- **Execution**: Updated the live World Model Matrix and Visual Workspace on the right.\n\n### 2. What We Got (Runtime Outputs & Actual Impact)\n\n${dynamicTbl || '_No data records currently loaded to compute variance. Upload a CSV to view live calculations._'}\n\n---\n\n### 3. Recommended Next Step\n- Trajectory demonstrates high efficiency. Click **+10%** in the toolbar or ask for deeper segment optimization.`;
@@ -724,7 +722,6 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
 
     // Topic: +10% Aggressive Expansion
     if (lower.includes('+10%') || lower.includes('10%') || lower.includes('expansion')) {
-      applyTableWhatIf(10, '+10% Aggressive Expansion Scenario');
       const dynamicTbl = buildRuntimeTable(1.10, 'Scenario (+10%)');
 
       return `# SCENARIO RUN: +10% Aggressive Expansion ✓\n\n### 1. What Changed (Input Levers)\n- **Growth Multiplier**: Scaled expansion rate to **+10.0% (1.10x factor)** across all drivers.\n- **Driver Weighting**: Primary gains compounded in high-volume segments.\n- **Workspace Sync**: Synchronized all scenario columns in the matrix.\n\n### 2. What We Got (Runtime Outputs & Actual Impact)\n\n${dynamicTbl || '_No data records currently loaded to compute variance. Upload a CSV to view live calculations._'}\n\n---\n\n### 3. Recommended Next Step\n- +10% expansion generates significant top-line lift. Run **Cost optimization** or ask *"What do you think?"* to review balance.`;
@@ -732,7 +729,6 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
 
     // Topic: -5% Soft Landing
     if (lower.includes('-5%') || lower.includes('soft landing') || lower.includes('contraction')) {
-      applyTableWhatIf(-5, '-5% Soft Landing Scenario');
       const dynamicTbl = buildRuntimeTable(0.95, 'Scenario (-5%)');
 
       return `# SCENARIO RUN: -5% Soft Landing & Risk Mitigation ✓\n\n### 1. What Changed (Input Levers)\n- **Defensive Multiplier**: Modeled a moderated **-5.0% growth profile (0.95x)**.\n- **Risk Adjustment**: Scaled back expansion across active segments.\n- **Cash Flow Target**: Preserved core operating sustainability.\n\n### 2. What We Got (Runtime Outputs & Actual Impact)\n\n${dynamicTbl || '_No data records currently loaded to compute variance. Upload a CSV to view live calculations._'}\n\n---\n\n### 3. Recommended Next Step\n- Downside risks remain contained. Select **Baseline** in the toolbar to restore standard projections.`;
@@ -740,7 +736,6 @@ export default function TalkPanel({ triggerToast }: TalkPanelProps) {
 
     // Topic: Reset / Baseline
     if (lower.includes('reset') || lower.includes('baseline')) {
-      applyTableWhatIf(0, 'Baseline Model');
       const dynamicTbl = buildRuntimeTable(1.0, 'Baseline Model');
 
       return `# SCENARIO RUN: Baseline Model ✓\n\n### 1. What Changed (Input Levers)\n- **Model State**: Reset all growth multipliers back to **Baseline 1.00x**.\n- **Workspace**: Synchronized historical actuals with baseline projections.\n\n### 2. What We Got (Runtime Outputs)\n\n${dynamicTbl || '_No data records currently loaded. Upload a CSV to view live calculations._'}\n\n---\n\n### 3. Recommended Next Step\n- Test a what-if scenario (e.g. **+5%**, **+10%**, **-5%**) or ask *"What do you think?"* to analyze drivers.`;

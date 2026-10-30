@@ -1,12 +1,15 @@
 import React from 'react';
-import { Upload, Globe } from 'lucide-react';
+import { Upload, Globe, PencilRuler } from 'lucide-react';
 
 interface DataSourceModalProps {
   onYes: () => void;
   onNo: () => void;
+  /** Set when an approved dataset design is waiting for real values: adds "Continue with the estimates". */
+  onEstimates?: () => void;
 }
 
-export default function DataSourceModal({ onYes, onNo }: DataSourceModalProps) {
+export default function DataSourceModal({ onYes, onNo, onEstimates }: DataSourceModalProps) {
+  const designMode = Boolean(onEstimates);
   return (
     /* ── Blocking overlay — pointer-events on backdrop intentionally omitted so user MUST click a button ── */
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -26,7 +29,7 @@ export default function DataSourceModal({ onYes, onNo }: DataSourceModalProps) {
               Data Source Selection
             </p>
             <h2 className="text-[15px] font-bold text-warm-text leading-snug">
-              Do you want to upload your own data file?
+              {designMode ? 'Where should the real values come from?' : 'Do you want to upload your own data file?'}
             </h2>
           </div>
         </div>
@@ -34,7 +37,9 @@ export default function DataSourceModal({ onYes, onNo }: DataSourceModalProps) {
         {/* Body */}
         <div className="px-6 py-5 flex flex-col gap-4">
           <p className="text-[13px] text-warm-muted leading-relaxed">
-            Web benchmarks have been collected. Choose how to build your World Model — your own data will be combined with the benchmarks for the most accurate results.
+            {designMode
+              ? 'Your table structure is approved. Replace the estimates with your own file or with web data, or build the World Model from the estimates as they are.'
+              : 'Web benchmarks have been collected. Choose how to build your World Model — your own data will be combined with the benchmarks for the most accurate results.'}
           </p>
 
           {/* Option buttons */}
@@ -49,10 +54,10 @@ export default function DataSourceModal({ onYes, onNo }: DataSourceModalProps) {
               </div>
               <div className="text-left">
                 <span className="block text-[13px] font-bold text-[#FF5A1F] group-hover:text-white transition-colors">
-                  Yes — Upload my data file
+                  {designMode ? 'Upload my data file' : 'Yes — Upload my data file'}
                 </span>
                 <span className="block text-[11.5px] text-warm-muted group-hover:text-white/80 transition-colors">
-                  CSV, Excel, or JSON · combined with web benchmarks
+                  {designMode ? 'CSV, Excel, or JSON · matched to your rows and periods' : 'CSV, Excel, or JSON · combined with web benchmarks'}
                 </span>
               </div>
             </button>
@@ -67,13 +72,33 @@ export default function DataSourceModal({ onYes, onNo }: DataSourceModalProps) {
               </div>
               <div className="text-left">
                 <span className="block text-[13px] font-bold text-warm-text">
-                  No — Use web benchmarks only
+                  {designMode ? 'Look up values on the web' : 'No — Use web benchmarks only'}
                 </span>
                 <span className="block text-[11.5px] text-warm-muted">
-                  Build from collected industry data · no upload needed
+                  {designMode ? 'Fills the latest finished period where a value is found · rough reference' : 'Build from collected industry data · no upload needed'}
                 </span>
               </div>
             </button>
+
+            {/* Estimates only (dataset design) */}
+            {onEstimates && (
+              <button
+                onClick={onEstimates}
+                className="group w-full flex items-center gap-4 p-4 rounded-xl border border-[#E5E1D8] bg-[#FAF9F7] hover:bg-[#F2EFE9] hover:border-warm-border transition-all cursor-pointer"
+              >
+                <div className="h-10 w-10 rounded-lg bg-[#E5E1D8] group-hover:bg-warm-border flex items-center justify-center shrink-0 transition-colors">
+                  <PencilRuler className="h-5 w-5 text-warm-muted" />
+                </div>
+                <div className="text-left">
+                  <span className="block text-[13px] font-bold text-warm-text">
+                    Continue with the estimates
+                  </span>
+                  <span className="block text-[11.5px] text-warm-muted">
+                    Results are labelled as based on estimates
+                  </span>
+                </div>
+              </button>
+            )}
           </div>
 
           <p className="text-[10.5px] text-warm-muted/60 font-mono text-center">

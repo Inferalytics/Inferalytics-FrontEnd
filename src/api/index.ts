@@ -26,6 +26,8 @@ import type {
   ScenarioCompareResponse,
   AgentRequest,
   AgentResponse,
+  DatasetDesign,
+  DesignCellEdit,
 } from '../types/api.ts';
 
 export const api = {
@@ -235,6 +237,36 @@ export const api = {
   // AgentResponse. Pass handlers to render text and tool progress as they arrive.
   agentChat: async (req: AgentRequest, handlers?: AgentStreamHandlers): Promise<AgentResponse> => {
     return streamAgentChat(req, handlers);
+  },
+
+  // ─── Dataset Design ────────────────────────────────────────────────────────
+  /** The batch's design table, or null if the design step has not started. */
+  getDatasetDesign: async (batchId: string) => {
+    const res = await axiosClient.get<DatasetDesign | null>('/api/data-ops-agent/dataset-design', {
+      params: { batch_id: batchId },
+    });
+    return res.data;
+  },
+
+  /** Save cells edited in the table. 409 = the table changed since `version`; 400 = invalid edit. */
+  patchDatasetDesignCells: async (batchId: string, version: number, edits: DesignCellEdit[]) => {
+    const res = await axiosClient.patch<DatasetDesign>('/api/data-ops-agent/dataset-design/cells', {
+      batch_id: batchId,
+      version,
+      edits,
+    });
+    return res.data;
+  },
+
+  /** Turn optimisation on or off for one row. 409 = the table changed since `version`. */
+  patchDatasetDesignDimension: async (batchId: string, version: number, dimension: string, optimise: boolean) => {
+    const res = await axiosClient.patch<DatasetDesign>('/api/data-ops-agent/dataset-design/dimensions', {
+      batch_id: batchId,
+      version,
+      dimension,
+      optimise,
+    });
+    return res.data;
   },
 };
 
